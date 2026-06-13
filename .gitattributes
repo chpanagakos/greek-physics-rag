@@ -1,0 +1,2 @@
+embeddings.npy filter=lfs diff=lfs merge=lfs -text
+qdrant_data/**/*.sqlite filter=lfs diff=lfs merge=lfs -text

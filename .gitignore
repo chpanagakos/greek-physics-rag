@@ -1,0 +1,32 @@
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Environment variables / secrets
+.env
+.env.*
+*.key
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ipynb_checkpoints/
+
+# Vector stores / embeddings caches (common in RAG)
+*.faiss
+*.index
+chroma_db/
+.chroma/
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
+
+# specific files
+
+FK_K5_E_A.md
+FK_K5_E_A.clean.md
