@@ -1,6 +1,6 @@
 # Misconception Diagnosis for Greek Physics Exams — RAG Pipeline
 
-Given a Panhellenic (Πανελλήνιες) collisions problem and a student's incorrect attempt, this system retrieves the relevant official methodology and surfaces **candidate misconceptions** from a hand-built taxonomy — for a tutor to confirm, not to replace one.
+Given a Panhellenic (Πανελλαδικές) collisions problem and a student's incorrect attempt, this system retrieves the relevant official methodology and surfaces **candidate misconceptions** from a hand-built taxonomy — for a tutor to confirm, not to replace one.
 
 **Live demo:** [PLACEHOLDER — Hugging Face Spaces URL]
 
