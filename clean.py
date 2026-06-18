@@ -16,6 +16,7 @@ JUNK_WORDS = (
     "esuo",
     "OJUO",
     "AIOΦANTOS",
+    "<!-- page",
 )
 with open("FK_K5_E_A.md", encoding="utf-8") as f:
     text = f.read()
@@ -32,6 +33,8 @@ for i, line in enumerate(lines):
         and lines[i + 1].strip() == ""
         and lines[i + 2].strip() == "---"
     ):
+        continue
+    if line.strip() == "---":
         continue
     kept.append(line)
 
