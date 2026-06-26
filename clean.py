@@ -17,6 +17,9 @@ JUNK_WORDS = (
     "OJUO",
     "AIOΦANTOS",
     "<!-- page",
+    "Ημερομηνία",
+    "Επιμέλεια",
+    "Επιστημονικός",
 )
 with open("FK_K5_E_A.md", encoding="utf-8") as f:
     text = f.read()
