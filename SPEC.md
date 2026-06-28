@@ -65,7 +65,10 @@ are parked, not adopted, until hit-rate is measured.
 - **Taxonomy:** a hand-built YAML list of collision misconceptions, each with a
   `source` provenance field (`observed` vs `constructed`). The LLM never authors
   tags; it suggests from the fixed set, a human confirms.
-- **Embeddings:** BGE-M3 (multilingual; handles Greek and math tokens).
+- **Embeddings:** BGE-M3 (multilingual; handles Greek and math tokens),
+    loaded via FlagEmbedding (native loader; keeps M3's sparse output available 
+    so hybrid retrieval is a config change, not a migration —
+    corpus is dense with exact Greek physics tokens where sparse helps).
 - **Vector store:** Qdrant.
 - **Generation:** a hosted frontier LLM via API. Chosen over a small model
   deliberately — retrieval supplies knowledge, not the diagnostic reasoning of
