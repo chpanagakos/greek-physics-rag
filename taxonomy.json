@@ -1,0 +1,41 @@
+{
+    "ERR_VEC": {
+        "description": "Failures in vector geometry and directional mechanics.",
+        "tags": {
+            "ERR_VEC_ADD_SCALAR": "The student treats orthogonal or angled vector quantities (like momentum or velocity) as scalar values. Instead of utilizing vector addition (e.g., p_total = sqrt(p1^2 + p2^2) for orthogonal vectors), they incorrectly perform standard arithmetic addition (p_total = p1 + p2).",
+            "ERR_VEC_SUB_SIGN": "A failure to assign and strictly maintain a sign convention (positive/negative axes). When calculating a change in state (Delta p or Delta v), the student subtracts magnitudes without reversing the sign of the initial vector, typical in rebound scenarios (e.g., calculating v - v = 0 instead of v - (-v) = 2v).",
+            "ERR_VEC_EQUILIBRIUM": "The student fails to recognize that an isolated system initially at rest must maintain a net-zero vector state. In explosion problems, they miss that the final vector of one fragment must perfectly cancel the resultant vector of the other fragments.",
+            "ERR_VEC_TRIG": "The student misapplies trigonometry when resolving vectors into x and y components. This includes swapping sine and cosine, or incorrectly setting up the tangent ratio for angles after a 2D collision."
+        }
+    },
+    "ERR_CONSV": {
+        "description": "Misapplications of fundamental conservation laws.",
+        "tags": {
+            "ERR_CONSV_AXIS": "The student incorrectly applies the law of conservation of momentum to an axis where an external impulsive force exists. For example, assuming vertical momentum is conserved when a mass drops onto a resting block on the floor, completely ignoring the normal force from the ground.",
+            "ERR_CONSV_KE_PLASTIC": "A fundamental theoretical error where the student sets initial kinetic energy equal to final kinetic energy (K_initial = K_final) for a completely inelastic (plastic) collision, failing to account for the energy lost to deformation and heat.",
+            "ERR_CONSV_PHASE": "The student conflates distinct physical phases of a multi-step problem. They might try to apply mechanical energy conservation during the brief collision phase, or apply momentum conservation during the subsequent swing of a pendulum or compression of a spring.",
+            "ERR_CONSV_INTERNAL": "The misconception that internal forces (like the tension in a rope being pulled by two skaters, or the electromagnetic repulsion between particles) can change the total momentum of an isolated system."
+        }
+    },
+    "ERR_SYS": {
+        "description": "Misidentification of system boundary conditions and properties.",
+        "tags": {
+            "ERR_SYS_STATE_ID": "The student fails to deduce the implied kinematic variables from the physical description. A classic example is not realizing that a projectile reaching its maximum trajectory height momentarily has a vertical velocity of zero.",
+            "ERR_SYS_ELASTIC_EXCHANGE": "A method-efficiency error, not a correctness error: the student reaches a correct result for a 1D elastic collision between equal masses via full algebraic solution, failing to recognize and apply the velocity-exchange property. The final answer may be right; the tag flags the missed best practice.",
+            "ERR_SYS_DYN_EQ": "The student misidentifies the point of maximum velocity in an oscillating system. They incorrectly assume it occurs at the initial contact point or the point of maximum amplitude, rather than at the dynamic equilibrium position where Sigma F = 0.",
+            "ERR_SYS_MASS_OMISSION": "A systemic modeling error where the student forgets to sum the masses (m1 + m2) when analyzing the post-collision state of a completely inelastic collision, resulting in a drastically inflated final velocity."
+        }
+    },
+    "ERR_MATH": {
+        "description": "Algebraic and mathematical execution errors.",
+        "tags": {
+            "ERR_MATH_RATIO_INV": "The student correctly sets up a linear physics equation but inverses the ratio during the algebraic manipulation (e.g., deriving m1 / m2 = 2 from the correct equation 2m1 = m2, instead of 1/2).",
+            "ERR_MATH_PCT_BASE": "The student calculates percentage loss or transfer using the wrong reference value. When asked for the percentage of energy lost, they might divide the change in energy by the final energy instead of the initial energy (Delta K / K_initial).",
+            "ERR_MATH_SQUARING": "The student forgets to square the velocity terms when converting a derived momentum expression back into a kinetic energy calculation, or they incorrectly substitute the K = p^2 / 2m relationship."
+        }
+    },
+    "NO_TAG_MATCH": {
+        "description": "Escape hatch: the attempt contains an error, but it does not match any tag in this taxonomy. Prefer this over forcing a poor fit.",
+        "tags": {}
+    }
+}
