@@ -116,7 +116,10 @@ def build_prompt(
     return "\n\n---\n\n".join(sections)
 
 
-def parse_response(text: str, taxonomy: dict[str, str]) -> dict:
+def parse_response(
+    text: str, taxonomy: dict[str, str], require_citations: bool = True
+) -> dict:
+    # def parse_response(text: str, taxonomy: dict[str, str]) -> dict:
     """Parse and validate the model's JSON. Deterministic gatekeeping:
     hallucinated tags are rejected here, in code, not trusted from the model.
 
@@ -138,6 +141,9 @@ def parse_response(text: str, taxonomy: dict[str, str]) -> dict:
             f"Model output is not valid JSON: {e}\n"
             f"--- RAW OUTPUT (first 500 chars) ---\n{cleaned[:500]}"
         ) from e
+
+    if not require_citations:
+        data.setdefault("cited_chunk_ids", [])
 
     for field in ("tags", "justification", "cited_chunk_ids"):
         if field not in data:
@@ -188,7 +194,11 @@ def diagnose(
     )
     raw_text = response.text
 
-    result = parse_response(raw_text, taxonomy)
+    result = parse_response(
+        raw_text, taxonomy, require_citations=use_retrieval and bool(chunks)
+    )
+
+    # result = parse_response(raw_text, taxonomy)
     result["prompt"] = prompt
     return result
 
