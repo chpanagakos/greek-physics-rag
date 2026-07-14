@@ -2,7 +2,7 @@
 
 Given a Panhellenic (Πανελλαδικές) collisions problem and a student's incorrect attempt, this system retrieves the relevant course methodology and surfaces **candidate misconceptions** from a closed, tutor-audited taxonomy — for a tutor to confirm, not to replace one.
 
-**Demo:** presented at Greeks in AI (July 2026, Eugenides Foundation, Athens). Hugging Face Spaces deployment planned; runs locally today (see below).
+**Demo:** Runs locally (see below). Hugging Face Spaces deployment planned.
 
 ---
 
