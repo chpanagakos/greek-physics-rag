@@ -10,11 +10,11 @@ Given a Panhellenic (Πανελλαδικές) collisions problem and a student'
 
 Frontier LLMs answer Panhellenic physics problems correctly out of the box. That was never the hard part. What they don't do:
 
-Diagnose a *student's wrong attempt* against a tutor-audited misconception framework, grounded in course material, with provenance the tutor can audit. A correct solution tells a student what the answer is. A grounded diagnosis tells a tutor *why this student got it wrong*, in the tutor's own vocabulary, with the worked material the attempt diverged from displayed alongside.
+Diagnose a *student's wrong attempt* against a tutor-audited misconception framework, grounded in course material, with provenance the tutor can audit. A correct solution tells a student what the answer is. A grounded diagnosis tells a tutor *why this student got it wrong*, in the tutor's own vocabulary, with the worked material that the attempt diverged from, which is displayed alongside.
 
 The system's value is grounded diagnosis with auditable provenance — not problem-solving.
 
-**Proof the retrieval matters:** the demo includes an ablation toggle — the same query with retrieval on and off. The honest finding, observed empirically: on textbook-clear errors, a frontier model names the misconception correctly *even without retrieval*. What retrieval changes is not correctness but **checkability**. With retrieval on, the diagnosis cites specific corpus chunks by ID — claims a tutor can verify against the source in seconds (and in testing, I did: a cited "25% kinetic energy loss" claim was grepped against the corpus and confirmed verbatim). With retrieval off, the same diagnosis is "trust me." For a tool whose output feeds grading decisions, checkable beats confident.
+**Proof the retrieval matters:** the demo includes an ablation toggle — the same query with retrieval on and off. The honest finding, observed empirically: on textbook-clear errors, a frontier model names the misconception correctly *even without retrieval*. What retrieval changes is not correctness but **checkability**. With retrieval on, the diagnosis cites specific corpus chunks by ID — claims a tutor can verify against the source in seconds. With retrieval off, the same diagnosis is "trust me." For a tool whose output feeds grading decisions, checkable beats confident.
 
 ## The hard input problem: Greek + LaTeX OCR
 
@@ -29,7 +29,7 @@ The ingestion pipeline uses Surya in math mode, converts `<math>` output to inli
 ```
 PDF exam material (Greek)
    │  Surya OCR (math_mode) → Markdown + inline LaTeX
-   │  cleaning (boilerplate stripped, audited: zero content casualties)
+   │  cleaning (boilerplate stripped, audited: zero content casualties, graphs aside)
    ▼
 Chunking — one exercise + worked solution per chunk (62 chunks)
    │  BGE-M3 dense embeddings (multilingual, strong on Greek)
@@ -57,7 +57,7 @@ UI (Gradio): input → diagnosis → candidate tags → cited chunk IDs
 
 A closed label list for collision misconceptions: 15 tags in four categories (vector/directional errors, conservation-law misapplications, system/state misidentification, algebraic execution), plus an explicit `NO_TAG_MATCH` escape hatch so the model is never forced into a bad fit.
 
-**Provenance, stated plainly:** the taxonomy was AI-drafted from the corpus, then audited by me against thirteen years of tutoring for these exams. The audit was not a rubber stamp — one tag (`ERR_SYS_ELASTIC_EXCHANGE`) was challenged and deliberately redefined as a *method-efficiency* error: it flags a student who reaches the correct answer for an equal-mass elastic collision through full algebra instead of the velocity-exchange property. The taxonomy encodes what a tutor grades, not only what physics forbids — a correct final answer can still earn a tag. A full per-tag audit pass and tags drawn from my own graded papers are on the roadmap.
+**Provenance, stated plainly:** the taxonomy was AI-drafted from the corpus, then audited by me. The audit was not a rubber stamp — one tag (`ERR_SYS_ELASTIC_EXCHANGE`) was challenged and deliberately redefined as a *method-efficiency* error: it flags a student who reaches the correct answer for an equal-mass elastic collision through full algebra instead of the velocity-exchange property. The taxonomy encodes what a tutor grades, not only what physics forbids — a correct final answer can still earn a tag. A full per-tag audit pass and tags drawn from my own graded papers are on the roadmap.
 
 Example entries:
 
@@ -70,7 +70,7 @@ Design rule: **the LLM is never the authority on tags.** It suggests candidates 
 
 ## Corpus
 
-Openly published Greek collisions material (ΚΕΦΑΛΑΙΟ 5: ΚΡΟΥΣΕΙΣ): 62 exercises with worked solutions — 42 questions, 10 exercises, 10 problems. Public material only, by design.
+Openly published Greek collisions material (ΚΕΦΑΛΑΙΟ 5: ΚΡΟΥΣΕΙΣ): 62 exercises with worked solutions — 42 questions, 10 exercises, 10 problems. Public material only.
 
 ## Design decisions
 
