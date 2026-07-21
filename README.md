@@ -1,8 +1,20 @@
+---
+title: Greek Physics RAG
+emoji: 🔬
+colorFrom: blue
+colorTo: gray
+sdk: gradio
+sdk_version: 6.20.0
+app_file: app.py
+pinned: false
+license: mit
+---
+
 # Misconception Diagnosis for Greek Physics Exams — RAG Pipeline
 
 Given a Panhellenic (Πανελλαδικές) collisions problem and a student's incorrect attempt, this system retrieves the relevant course methodology and surfaces **candidate misconceptions** from a closed, tutor-audited taxonomy — for a tutor to confirm, not to replace one.
 
-**Demo:** Runs locally (see below). Hugging Face Spaces deployment in progress.
+**Demo:** Runs locally (see below). Hugging Face Spaces deployment planned.
 
 ---
 
