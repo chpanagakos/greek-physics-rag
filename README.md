@@ -38,8 +38,6 @@ The corpus is Greek-language physics exam material dense with mathematical notat
 
 The ingestion pipeline uses Surya in math mode, converts `<math>` output to inline LaTeX delimiters, and emits page-separated Markdown. Getting clean, chunkable text out of these PDFs was the largest share of corpus preparation work, and everything downstream depends on it.
 
-[PLACEHOLDER — before/after image: scanned exam page → extracted Markdown with LaTeX]
-
 ## Architecture
 
 ```
