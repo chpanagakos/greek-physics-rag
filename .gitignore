@@ -32,3 +32,6 @@ FK_K5_E_A.md
 FK_K5_E_A.pdf
 FK_K5_E_A.clean.md
 NOTES.md
+
+# qdrant embedded store: ship data, not runtime locks
+qdrant_data/.lock
