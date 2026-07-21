@@ -12,7 +12,7 @@ import traceback
 import gradio as gr
 
 from examples import EXAMPLES
-from prompt import diagnose
+from prompt import QuotaExceededError, diagnose
 from retrieve import retrieve
 
 ...
@@ -40,6 +40,15 @@ def run_diagnosis(problem: str, attempt: str, use_retrieval: bool):
         tags = ", ".join(result["tags"])
         cited = ", ".join(result["cited_chunk_ids"]) or "(none)"
         return tags, cited, result["justification"], retrieved_display
+
+    except QuotaExceededError:
+        return (
+            "—",
+            "—",
+            "Το όριο κλήσεων του API εξαντλήθηκε προσωρινά. "
+            "Δοκιμάστε ξανά σε ένα λεπτό.",
+            "—",
+        )
 
     except Exception as e:
         traceback.print_exc()

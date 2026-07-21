@@ -15,6 +15,7 @@ import os
 from pathlib import Path
 
 from google import genai
+from google.genai import errors as genai_errors
 from google.genai import types
 
 # import anthropic
@@ -22,6 +23,11 @@ from google.genai import types
 
 MODEL = "gemini-2.5-flash"
 TAXONOMY_PATH = Path(__file__).parent / "taxonomy.json"
+
+
+class QuotaExceededError(Exception):
+    """Provider rate/quota limit hit. Provider-neutral by design:
+    app.py must not import the SDK's error types (seam)."""
 
 
 def load_taxonomy(path: Path = TAXONOMY_PATH) -> dict[str, str]:
@@ -183,15 +189,21 @@ def diagnose(
     # raw_text = response.content[0].text
 
     client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
-    response = client.models.generate_content(
-        model=MODEL,
-        contents=prompt,
-        config=types.GenerateContentConfig(
-            temperature=0,
-            max_output_tokens=4096,
-            thinking_config=types.ThinkingConfig(thinking_budget=0),
-        ),
-    )
+    try:
+        response = client.models.generate_content(
+            model=MODEL,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                temperature=0,
+                max_output_tokens=4096,
+                thinking_config=types.ThinkingConfig(thinking_budget=0),
+            ),
+        )
+    except genai_errors.ClientError as e:
+        if e.code == 429:
+            raise QuotaExceededError from e
+        raise
+
     raw_text = response.text
 
     result = parse_response(
