@@ -11,8 +11,11 @@ import traceback
 
 import gradio as gr
 
+from examples import EXAMPLES
 from prompt import diagnose
 from retrieve import retrieve
+
+...
 
 
 def run_diagnosis(problem: str, attempt: str, use_retrieval: bool):
@@ -75,6 +78,13 @@ with gr.Blocks(title="greek-physics-rag") as demo:
                 label="Τεκμηρίωση", lines=8, interactive=False
             )
 
+        gr.Examples(
+            examples=EXAMPLES,
+            inputs=[problem_in, attempt_in],
+            label="Παραδείγματα (κλικ για συμπλήρωση)",
+            cache_examples=False,
+        )
+
     with gr.Accordion("Ανακτημένα αποσπάσματα (audit)", open=False):
         retrieved_out = gr.Textbox(
             label="Τι είδε το μοντέλο", lines=14, interactive=False
@@ -85,7 +95,6 @@ with gr.Blocks(title="greek-physics-rag") as demo:
         inputs=[problem_in, attempt_in, retrieval_toggle],
         outputs=[tags_out, cited_out, justification_out, retrieved_out],
     )
-
 
 if __name__ == "__main__":
     demo.launch()
