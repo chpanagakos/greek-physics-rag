@@ -23,8 +23,7 @@ Ten worked cases are available as click-to-fill examples; each runs the live pip
 ---
 
 ## Why this exists when frontier models already solve these problems
-
-Frontier LLMs answer Panhellenic physics problems correctly out of the box. That was never the hard part. What they don't do:
+Frontier LLMs can often solve standard Panhellenic physics problems without retrieval. What they don't do:
 
 Diagnose a *student's wrong attempt* against a tutor-audited misconception framework, grounded in course material, with provenance the tutor can audit. A correct solution tells a student what the answer is. A grounded diagnosis tells a tutor *why this student got it wrong*, in the tutor's own vocabulary, with the worked material that the attempt diverged from, which is displayed alongside.
 
@@ -34,7 +33,7 @@ The system's value is grounded diagnosis with auditable provenance — not probl
 
 ## The hard input problem: Greek + LaTeX OCR
 
-The corpus is Greek-language physics exam material dense with mathematical notation. Off-the-shelf OCR fails on this combination: Greek text and Greek-letter math symbols (ω, φ, λ as *variables*, not language) collide constantly.
+The corpus is Greek-language physics exam material dense with mathematical notation. The general-purpose OCR systems tested during development performed poorly on this combination.: Greek text and Greek-letter math symbols (ω, φ, λ as *variables*, not language) collide constantly.
 
 The ingestion pipeline uses Surya in math mode, converts `<math>` output to inline LaTeX delimiters, and emits page-separated Markdown. Getting clean, chunkable text out of these PDFs was the largest share of corpus preparation work, and everything downstream depends on it.
 
@@ -82,13 +81,16 @@ Example entries:
 
 Design rule: **the LLM is never the authority on tags.** It suggests candidates from the fixed taxonomy; a human tutor confirms. The parser enforces this in code — a hallucinated tag raises an error rather than reaching the tutor. This keeps the diagnostic layer auditable and the taxonomy improvable independently of the model.
 
-## Corpus
+## Licence and corpus
 
-Openly published Greek collisions material (ΚΕΦΑΛΑΙΟ 5: ΚΡΟΥΣΕΙΣ): 62 exercises with worked solutions — 42 questions, 10 exercises, 10 problems. Public material only.
+**Code** (`*.py`, configuration, `taxonomy.json`): MIT.
 
+**Corpus** (`chunks.jsonl` and the text payloads in the shipped Qdrant collection): derived from Greek upper-secondary physics material published by ΙΤΥΕ «Διόφαντος», licensed CC BY-NC-SA. These files are redistributed here under the same licence, with attribution to ΙΤΥΕ «Διόφαντος» as the original distributor. They are OCR-extracted and chunked, not modified in substance.
+
+The MIT licence does not extend to the corpus material.
 ## Design decisions
 
-**Frontier model over a small one.** A small model would showcase retrieval more dramatically — it can't solve exam physics from parametric knowledge alone. But retrieval supplies *knowledge*, not *reasoning*: reading a wrong attempt, locating where it diverges from the retrieved solution, and matching that divergence to a taxonomy entry is diagnostic reasoning small models fail at — and Greek input degrades them further. The retrieval ablation toggle demonstrates grounding without sacrificing diagnosis quality.
+**Frontier model over a small one.** A small model would showcase retrieval more dramatically — it can't solve exam physics from parametric knowledge alone. But retrieval supplies *knowledge*, not *reasoning*: reading a wrong attempt, locating where it diverges from the retrieved solution, and matching that divergence to a taxonomy entry is diagnostic reasoning that smaller models handled less reliably in project testing — and Greek input degrades them further. The retrieval ablation toggle demonstrates grounding without sacrificing diagnosis quality.
 
 **Query = problem statement only.** The student's attempt enters the LLM prompt verbatim but never the retrieval query. The corpus is correct physics; embedding erroneous physics risks pulling retrieval toward whatever correct topic the error superficially imitates. Rejected alternatives (attempt-only, concatenation, dual-search-with-merge) are documented in the repo history.
 
@@ -110,12 +112,22 @@ Same input, retrieval off (ablation): same tag, no citations — a correct diagn
 
 ## Evaluation
 
-Current state: smoke-tested end to end on cases spanning three taxonomy categories, with citation claims manually audited against the corpus. A fixed eval set with two reported numbers is the next milestone:
+Current state: smoke-tested end to end on 10 cases, with citation claims manually audited against the corpus. A fixed eval set with two reported numbers is the next milestone:
 
 - **Retrieval hit-rate** — fraction of cases whose correct source chunk appears in top-k. This is the floor: the diagnosis can only be as grounded as the retrieval beneath it.
 - **Tag-suggestion accuracy** — fraction of cases where the confirmed misconception tag appears among the suggested candidates.
 
 One retrieval limitation is already characterized empirically: dense-only retrieval discriminates *topic* well but *collision-type* weakly (a one-word πλαστικά→ελαστικά swap barely reorders results). The named fix — hybrid dense+sparse using BGE-M3's lexical weights — is on the roadmap.
+
+## Limitations Summary
+
+- **Corpus:** one chapter (ΚΕΦΑΛΑΙΟ 5, collisions), 62 chunks. Greek upper-secondary Panhellenic material only. Nothing outside collisions is retrievable, and the system will still attempt a diagnosis rather than declining — out-of-scope input is not currently detected.
+- **Retrieval:** dense only. Collision-type discrimination is empirically weak (see Evaluation); the hybrid dense+sparse fix is named but not built.
+- **Evaluation:** no formal benchmark yet. Claims are supported by end-to-end smoke tests and manual citation audits, not measured accuracy.
+- **Figures and graphs:** the corpus is text and LaTeX. Questions whose content depends on a diagram, or whose expected answer is a sketched graph, are outside what the system can ground a diagnosis in.
+- **Unit of diagnosis:** one problem and one attempt per submission. Multi-part exam questions (Γ1–Γ4) must be submitted separately; pasted as a block, the output schema degrades silently.
+- **Quota:** the deployed demo runs on the Gemini free tier, shared across all visitors and exhaustible.
+- **Not autonomous:** output is 1–3 *candidate* tags for a tutor to confirm. The system is a diagnostic aid, not a grader.
 
 ## Authorship
 
