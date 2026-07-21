@@ -14,7 +14,11 @@ license: mit
 
 Given a Panhellenic (Πανελλαδικές) collisions problem and a student's incorrect attempt, this system retrieves the relevant course methodology and surfaces **candidate misconceptions** from a closed, tutor-audited taxonomy — for a tutor to confirm, not to replace one.
 
-**Demo:** Runs locally (see below). Hugging Face Spaces deployment planned.
+**Live demo:** https://huggingface.co/spaces/chpanagakos/greek-physics-rag
+
+Deployed on Hugging Face Spaces (CPU, free tier). This is a public demonstrator, not a production service: no SLOs, monitoring, or operational infrastructure. The Gemini free-tier quota is shared across all visitors, so the demo may occasionally report that the API limit is temporarily exhausted.
+
+Ten worked cases are available as click-to-fill examples; each runs the live pipeline rather than replaying a cached result.
 
 ---
 
@@ -127,14 +131,15 @@ cd greek-physics-rag
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 export GEMINI_API_KEY=...   # provider is isolated to one function; swappable
-python embed.py        # corpus → embeddings (one-time; GPU optional)
-python load_qdrant.py  # embeddings → local Qdrant collection (embedded mode)
-python app.py          # Gradio UI at localhost:7860
+python app.py               # Gradio UI at localhost:7860
+
+# The Qdrant collection ships with the repo (62 chunks, embedded mode).
+# To rebuild it from source instead:
+python embed.py        # chunks.jsonl → embeddings.npy (GPU optional)
+python load_qdrant.py  # embeddings.npy → local Qdrant collection
 ```
-
 ## Status
-
-Vertical slice complete and running locally: OCR ingestion → cleaning → chunking → embeddings → Qdrant → retrieval → grounded diagnosis → Gradio UI with ablation toggle. Eval set and Spaces deployment are next.
+Vertical slice complete and deployed: OCR ingestion → cleaning → chunking → embeddings → Qdrant → retrieval → grounded diagnosis → Gradio UI with ablation toggle, running publicly on Hugging Face Spaces. The evaluation set is the next milestone.
 
 ## Scope
 
