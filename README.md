@@ -10,7 +10,7 @@ pinned: false
 license: mit
 ---
 
-# Misconception Diagnosis for Greek Physics Exams — RAG Pipeline
+# Auditable Misconception Diagnosis for Greek Physics Exams — retrieval-augmented generation (RAG) Pipeline
 
 Given a Panhellenic (Πανελλαδικές) collisions problem and a student's incorrect attempt, this system retrieves the relevant course methodology and surfaces **candidate misconceptions** from a closed, tutor-audited taxonomy — for a tutor to confirm, not to replace one.
 
@@ -20,10 +20,12 @@ Deployed on Hugging Face Spaces (CPU, free tier). This is a public demonstrator,
 
 Ten worked cases are available as click-to-fill examples; each runs the live pipeline rather than replaying a cached result.
 
+*Privacy:* Inputs are sent to the configured Gemini API for generation. Do not enter student names, contact details or other sensitive information into the public demo.
+
 ---
 
 ## Why this exists when frontier models already solve these problems
-Frontier LLMs can often solve standard Panhellenic physics problems without retrieval. What they don't do:
+Frontier LLMs can often solve standard Greek national university-entrance examinations (Panhellenic exams) physics problems without retrieval. What they don't do:
 
 Diagnose a *student's wrong attempt* against a tutor-audited misconception framework, grounded in course material, with provenance the tutor can audit. A correct solution tells a student what the answer is. A grounded diagnosis tells a tutor *why this student got it wrong*, in the tutor's own vocabulary, with the worked material that the attempt diverged from, which is displayed alongside.
 
@@ -45,7 +47,7 @@ PDF exam material (Greek)
    │  cleaning (boilerplate stripped, audited: zero content casualties, graphs aside)
    ▼
 Chunking — one exercise + worked solution per chunk (62 chunks)
-   │  BGE-M3 dense embeddings (multilingual, strong on Greek)
+   │  BGE-M3 dense embeddings (multilingual, selected for satisfactory Greek retrieval behaviour in project testing.)
    ▼
 Qdrant vector store (embedded mode; payload carries chunk_id + text,
    │                  frozen at index time — provenance by construction)
@@ -131,7 +133,7 @@ One retrieval limitation is already characterized empirically: dense-only retrie
 
 ## Authorship
 
-The architecture, every design decision above, and the taxonomy audit are mine. Implementation code was written in collaboration with LLM assistants (Claude), with ownership at the decision and explanation level: I can defend every non-trivial choice in this repo. The OCR pipeline follows the same disclosure (documented in its module).
+The architecture, every design decision above, and the taxonomy audit are mine. Implementation code was written in collaboration with LLM assistants (Claude), with ownership at the decision and explanation level. The OCR pipeline follows the same disclosure (documented in its module).
 
 ## Running locally
 
@@ -154,3 +156,19 @@ Vertical slice complete and deployed: OCR ingestion → cleaning → chunking �
 ## Scope
 
 This is a deliberately narrow slice — one chapter (collisions), one exam family, one diagnostic loop — built end to end. It is not a tutoring platform.
+
+## References and components
+
+**Prompt block ordering** — Liu, N.F., Lin, K., Hewitt, J., Paranjape, A., Bevilacqua, M., Petroni, F., Liang, P. (2024). *Lost in the Middle: How Language Models Use Long Contexts.* Transactions of the ACL, 12:157–173. [arXiv:2307.03172](https://arxiv.org/abs/2307.03172) · [ACL Anthology](https://aclanthology.org/2024.tacl-1.9/)
+
+**Embeddings** — BGE-M3 ([BAAI/bge-m3](https://huggingface.co/BAAI/bge-m3)). Chen, J., Xiao, S., Zhang, P., Luo, K., Lian, D., Liu, Z. (2024). *M3-Embedding: Multi-Linguality, Multi-Functionality, Multi-Granularity Text Embeddings Through Self-Knowledge Distillation.* Findings of the ACL 2024, 2318–2335. [arXiv:2402.03216](https://arxiv.org/abs/2402.03216)
+
+**OCR** — [Surya](https://github.com/datalab-to/surya) (datalab-to), used in math mode for Greek text with inline mathematical notation.
+
+**Vector store** — [Qdrant](https://github.com/qdrant/qdrant), Apache-2.0, run in embedded mode.
+
+**UI** — [Gradio](https://github.com/gradio-app/gradio).
+
+**Generation** — [Gemini API](https://ai.google.dev/) (gemini-2.5-flash). The provider is isolated to a single function; see Design decisions.
+
+**Corpus** — [https://www.study4exams.gr/physics_k/pdf/FK_K5_E/FK_K5_E_A.pdf], ΙΤΥΕ «Διόφαντος». See Licence and corpus.
