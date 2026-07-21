@@ -35,7 +35,7 @@ The system's value is grounded diagnosis with auditable provenance — not probl
 
 ## The hard input problem: Greek + LaTeX OCR
 
-The corpus is Greek-language physics exam material dense with mathematical notation. The general-purpose OCR systems tested during development performed poorly on this combination.: Greek text and Greek-letter math symbols (ω, φ, λ as *variables*, not language) collide constantly.
+The corpus is Greek-language physics exam material dense with mathematical notation. The general-purpose OCR systems tested during development performed poorly on this combination: Greek text and Greek-letter math symbols (ω, φ, λ as *variables*, not language) collide constantly.
 
 The ingestion pipeline uses Surya in math mode, converts `<math>` output to inline LaTeX delimiters, and emits page-separated Markdown. Getting clean, chunkable text out of these PDFs was the largest share of corpus preparation work, and everything downstream depends on it.
 
@@ -47,7 +47,7 @@ PDF exam material (Greek)
    │  cleaning (boilerplate stripped, audited: zero content casualties, graphs aside)
    ▼
 Chunking — one exercise + worked solution per chunk (62 chunks)
-   │  BGE-M3 dense embeddings (multilingual, selected for satisfactory Greek retrieval behaviour in project testing.)
+   │  BGE-M3 dense embeddings (multilingual, selected for satisfactory Greek retrieval behaviour in project testing)
    ▼
 Qdrant vector store (embedded mode; payload carries chunk_id + text,
    │                  frozen at index time — provenance by construction)
@@ -121,7 +121,7 @@ Current state: smoke-tested end to end on 10 cases, with citation claims manuall
 
 One retrieval limitation is already characterized empirically: dense-only retrieval discriminates *topic* well but *collision-type* weakly (a one-word πλαστικά→ελαστικά swap barely reorders results). The named fix — hybrid dense+sparse using BGE-M3's lexical weights — is on the roadmap.
 
-## Limitations Summary
+## Limitations
 
 - **Corpus:** one chapter (ΚΕΦΑΛΑΙΟ 5, collisions), 62 chunks. Greek upper-secondary Panhellenic material only. Nothing outside collisions is retrievable, and the system will still attempt a diagnosis rather than declining — out-of-scope input is not currently detected.
 - **Retrieval:** dense only. Collision-type discrimination is empirically weak (see Evaluation); the hybrid dense+sparse fix is named but not built.
@@ -171,4 +171,4 @@ This is a deliberately narrow slice — one chapter (collisions), one exam famil
 
 **Generation** — [Gemini API](https://ai.google.dev/) (gemini-2.5-flash). The provider is isolated to a single function; see Design decisions.
 
-**Corpus** — [https://www.study4exams.gr/physics_k/pdf/FK_K5_E/FK_K5_E_A.pdf], ΙΤΥΕ «Διόφαντος». See Licence and corpus.
+**Corpus** — [study4exams.gr — ΚΕΦΑΛΑΙΟ 5: ΚΡΟΥΣΕΙΣ (PDF)](https://www.study4exams.gr/physics_k/pdf/FK_K5_E/FK_K5_E_A.pdf), ΙΤΥΕ «Διόφαντος». See Licence and corpus.
