@@ -10,7 +10,9 @@ pinned: false
 license: other
 ---
 
-# Auditable Misconception Diagnosis for Greek Physics Exams — retrieval-augmented generation (RAG) Pipeline
+# Auditable Misconception Diagnosis for Greek Physics Exams
+
+A retrieval-augmented generation (RAG) pipeline for tutor review.
 
 Given a Panhellenic (Πανελλαδικές) collisions problem and a student's incorrect attempt, this system retrieves the relevant course methodology and surfaces **candidate misconceptions** from a closed, tutor-audited taxonomy — for a tutor to confirm, not to replace one.
 
