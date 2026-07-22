@@ -11,6 +11,9 @@ Workflow per case:
 Blinding is deliberate: judging text without seeing rank or chunk_id keeps the
 labels independent of the system being measured. Ranks are revealable after saving.
 
+Embedded Qdrant takes an exclusive lock on qdrant_data/, so close app.py before
+running this.
+
 Run:  python eval/label_tool.py
 """
 
@@ -21,16 +24,16 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-import gradio as gr
-
-from paths import CASES_PATH, CHUNKS, POOLS_PATH
-from retrieve import retrieve as _retrieve
+import gradio as gr  # noqa: E402
+from paths import CASES_PATH
+from paths import CHUNKS as CHUNKS_PATH  # noqa: E402
+from paths import POOLS_PATH
+from retrieve import retrieve as _retrieve  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # CONFIG
 # ---------------------------------------------------------------------------
 
-REPO = Path(__file__).resolve().parent.parent
 POOL_K = 10
 
 # Keep this string identical to the rule frozen in SPEC.md.
@@ -43,11 +46,11 @@ LABELLING_RULE = (
 )
 
 # ---------------------------------------------------------------------------
-# ADAPTER — the only section you should need to edit.
+# DATA ACCESS
 # ---------------------------------------------------------------------------
 
 def load_chunks() -> dict:
-    """Return {chunk_id: text} for all 62 chunks."""
+    """Return {chunk_id: text} for every chunk in the corpus."""
     chunks = {}
     with open(CHUNKS_PATH, encoding="utf-8") as f:
         for line in f:
@@ -55,20 +58,33 @@ def load_chunks() -> dict:
             if not line:
                 continue
             rec = json.loads(line)
-            chunks[str(rec["chunk_id"])] = rec["text"]   # <-- CHECK FIELD NAMES
+            chunks[str(rec["id"])] = rec["text"]
     return chunks
 
+
+def load_cases() -> list:
+    if not CASES_PATH.exists():
+        sys.exit(
+            f"No case file at {CASES_PATH}.\n"
+            "Create it first: one JSON object per line with the fields "
+            "case_id, problem_text, student_attempt, gold_tag, tag_source, attempt_source."
+        )
+    lines = CASES_PATH.read_text(encoding="utf-8").splitlines()
+    return [json.loads(line) for line in lines if line.strip()]
+
+
 def retrieve_topk(query: str, k: int = POOL_K) -> list:
-    return [h["chunk_id"] for h in _retrieve(query, k)]
+    """Return chunk_ids in rank order, best first."""
+    return [hit["chunk_id"] for hit in _retrieve(query, k)]
 
 # ---------------------------------------------------------------------------
 # STATE
 # ---------------------------------------------------------------------------
 
 CHUNKS = load_chunks()
-CASES = [json.loads(l) for l in CASES_PATH.read_text(encoding="utf-8").splitlines() if l.strip()]
+CASES = load_cases()
 POOLS = json.loads(POOLS_PATH.read_text(encoding="utf-8")) if POOLS_PATH.exists() else {}
-DISPLAY_ORDER = {}   # case_id -> [chunk_id, ...] as shown on screen
+DISPLAY_ORDER = {}   # case_id -> [chunk_id, ...] in the order shown on screen
 
 
 def save_cases():
@@ -82,22 +98,18 @@ def save_pools():
 
 
 def build_pool(case: dict) -> dict:
-    """Union of top-K from both query configurations. Cached."""
+    """Union of top-K from both query configurations. Cached to eval/pools.json."""
     cid = case["case_id"]
     if cid in POOLS:
         return POOLS[cid]
 
-    q_problem = case["problem_text"]
-    q_both = case["problem_text"] + "\n" + case["student_attempt"]
+    ranks_problem = retrieve_topk(case["problem_text"])
+    ranks_both = retrieve_topk(case["problem_text"] + "\n" + case["student_attempt"])
 
-    ranks_problem = retrieve_topk(q_problem)
-    ranks_both = retrieve_topk(q_both)
-
-    union = list(dict.fromkeys(ranks_problem + ranks_both))
     POOLS[cid] = {
-        "union": union,
-        "rank_problem": {c: ranks_problem.index(c) + 1 for c in ranks_problem},
-        "rank_both": {c: ranks_both.index(c) + 1 for c in ranks_both},
+        "union": list(dict.fromkeys(ranks_problem + ranks_both)),
+        "rank_problem": {c: i + 1 for i, c in enumerate(ranks_problem)},
+        "rank_both": {c: i + 1 for i, c in enumerate(ranks_both)},
     }
     save_pools()
     return POOLS[cid]
@@ -105,6 +117,11 @@ def build_pool(case: dict) -> dict:
 # ---------------------------------------------------------------------------
 # UI CALLBACKS
 # ---------------------------------------------------------------------------
+
+def progress_text() -> str:
+    done = sum(1 for c in CASES if c.get("gold_chunk_ids") is not None)
+    return f"{done} of {len(CASES)} cases labelled"
+
 
 def render_case(idx: int):
     case = CASES[idx]
@@ -131,15 +148,13 @@ def render_case(idx: int):
     saved = case.get("gold_chunk_ids") or []
     preselected = [str(order.index(c) + 1) for c in saved if c in order]
 
-    labelled = sum(1 for c in CASES if c.get("gold_chunk_ids") is not None)
-    progress = f"{labelled} of {len(CASES)} cases labelled"
-
     return (
-        header, body,
+        header,
+        body,
         gr.update(choices=choices, value=preselected),
         case.get("notes", ""),
         bool(case.get("pool_miss", False)),
-        progress,
+        progress_text(),
         "",           # clear the reveal panel
     )
 
@@ -152,16 +167,18 @@ def save_current(idx: int, picks, notes, pool_miss):
     case["pool_miss"] = bool(pool_miss)
     save_cases()
 
-    labelled = sum(1 for c in CASES if c.get("gold_chunk_ids") is not None)
     ids = ", ".join(case["gold_chunk_ids"]) or "none"
-    return f"Saved {case['case_id']} — gold: {ids}  ({labelled} of {len(CASES)} labelled)"
+    return f"Saved {case['case_id']} — gold: {ids}", progress_text()
 
 
 def reveal(idx: int):
     case = CASES[idx]
     pool = POOLS[case["case_id"]]
     order = DISPLAY_ORDER[case["case_id"]]
-    lines = ["| shown | chunk_id | rank (problem) | rank (problem+attempt) |", "|---|---|---|---|"]
+    lines = [
+        "| shown | chunk_id | rank (problem) | rank (problem+attempt) |",
+        "|---|---|---|---|",
+    ]
     for i, c in enumerate(order):
         rp = pool["rank_problem"].get(c, "—")
         rb = pool["rank_both"].get(c, "—")
@@ -169,7 +186,7 @@ def reveal(idx: int):
     return "\n".join(lines)
 
 
-def step(idx: int, delta: int):
+def step(idx: int, delta: int) -> int:
     return max(0, min(len(CASES) - 1, idx + delta))
 
 # ---------------------------------------------------------------------------
@@ -197,7 +214,7 @@ with gr.Blocks(title="Gold chunk labelling") as demo:
             picks = gr.CheckboxGroup(label="Gold chunks", choices=[])
             pool_miss = gr.Checkbox(
                 label="Correct chunk is not in this pool",
-                info="Tick when you know the right chunk exists in the corpus but retrieval never surfaced it.",
+                info="Tick when the right chunk exists in the corpus but retrieval never surfaced it.",
             )
             notes = gr.Textbox(
                 label="Notes",
@@ -210,16 +227,16 @@ with gr.Blocks(title="Gold chunk labelling") as demo:
 
     reveal_md = gr.Markdown()
 
-    outputs = [header_md, body_md, picks, notes, pool_miss, progress_box, reveal_md]
+    case_outputs = [header_md, body_md, picks, notes, pool_miss, progress_box, reveal_md]
 
-    demo.load(render_case, inputs=idx_state, outputs=outputs)
+    demo.load(render_case, inputs=idx_state, outputs=case_outputs)
 
     prev_btn.click(lambda i: step(i, -1), idx_state, idx_state).then(
-        render_case, idx_state, outputs)
+        render_case, idx_state, case_outputs)
     next_btn.click(lambda i: step(i, +1), idx_state, idx_state).then(
-        render_case, idx_state, outputs)
+        render_case, idx_state, case_outputs)
 
-    save_btn.click(save_current, [idx_state, picks, notes, pool_miss], status)
+    save_btn.click(save_current, [idx_state, picks, notes, pool_miss], [status, progress_box])
     reveal_btn.click(reveal, idx_state, reveal_md)
 
 if __name__ == "__main__":
