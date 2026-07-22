@@ -4,10 +4,12 @@ import numpy as np
 import torch
 from FlagEmbedding import BGEM3FlagModel
 
+from paths import CHUNKS, EMBEDDINGS, IDS
+
 texts = []
 ids = []
 
-with open("chunks.jsonl", "r", encoding="utf-8") as f:
+with open(CHUNKS, "r", encoding="utf-8") as f:
     for line in f:
         record = json.loads(line)
         texts.append(record["text"])
@@ -27,7 +29,7 @@ assert embeddings.shape == (
     1024,
 ), f"Shape mismatch: {embeddings.shape}, expected (62, 1024)."
 print(embeddings.shape)
-np.save("embeddings.npy", embeddings)
+np.save(EMBEDDINGS, embeddings)
 
-with open("ids.json", "w", encoding="utf-8") as f:
+with open(IDS, "w", encoding="utf-8") as f:
     json.dump(ids, f, ensure_ascii=False)

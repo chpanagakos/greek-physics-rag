@@ -1,3 +1,5 @@
+from paths import CLEAN_MD, OCR_MD
+
 JUNK_WORDS = (
     "ΒΟΗΘΗΜΑΤΑ",
     "ΨΗΦΙ",
@@ -21,7 +23,7 @@ JUNK_WORDS = (
     "Επιμέλεια",
     "Επιστημονικός",
 )
-with open("FK_K5_E_A.md", encoding="utf-8") as f:
+with open(OCR_MD, encoding="utf-8") as f:
     text = f.read()
 lines = text.splitlines()
 print(len(lines))
@@ -41,7 +43,7 @@ for i, line in enumerate(lines):
         continue
     kept.append(line)
 
-with open("FK_K5_E_A.clean.md", "w", encoding="utf-8") as f:
+with open(CLEAN_MD, "w", encoding="utf-8") as f:
     f.write("\n".join(kept))
 
 print(

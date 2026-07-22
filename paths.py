@@ -15,3 +15,6 @@ IDS = DATA / "ids.json"
 QDRANT = REPO / "qdrant_data"
 TAXONOMY = REPO / "taxonomy.json"
 EVAL = REPO / "eval"
+
+CASES_PATH = REPO / "eval" / "cases.jsonl"
+POOLS_PATH = REPO / "eval" / "pools.json"  # cache so restarts are fast

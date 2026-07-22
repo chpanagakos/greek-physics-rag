@@ -16,18 +16,21 @@ Run:  python eval/label_tool.py
 
 import json
 import random
+import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 import gradio as gr
+
+from paths import CASES_PATH, CHUNKS, POOLS_PATH
+from retrieve import retrieve as _retrieve
 
 # ---------------------------------------------------------------------------
 # CONFIG
 # ---------------------------------------------------------------------------
 
 REPO = Path(__file__).resolve().parent.parent
-CASES_PATH = REPO / "eval" / "cases.jsonl"
-CHUNKS_PATH = REPO / "data" / "chunks.jsonl"      # <-- CHECK THIS PATH
-POOLS_PATH = REPO / "eval" / "pools.json"          # cache so restarts are fast
 POOL_K = 10
 
 # Keep this string identical to the rule frozen in SPEC.md.
@@ -55,31 +58,8 @@ def load_chunks() -> dict:
             chunks[str(rec["chunk_id"])] = rec["text"]   # <-- CHECK FIELD NAMES
     return chunks
 
-
 def retrieve_topk(query: str, k: int = POOL_K) -> list:
-    """Return a list of chunk_id strings in rank order (best first)."""
-    from retrieve import search            # <-- CHECK MODULE + FUNCTION NAME
-    hits = search(query, top_k=k)          # <-- CHECK ARG NAME
-    return [_hit_to_id(h) for h in hits]
-
-
-def _hit_to_id(hit) -> str:
-    """Tolerate the usual shapes a retrieval function returns."""
-    if isinstance(hit, str):
-        return hit
-    if isinstance(hit, dict):
-        for key in ("chunk_id", "id"):
-            if key in hit:
-                return str(hit[key])
-        payload = hit.get("payload") or {}
-        if "chunk_id" in payload:
-            return str(payload["chunk_id"])
-    if isinstance(hit, (tuple, list)) and hit:
-        return str(hit[0])
-    for attr in ("chunk_id", "id"):
-        if hasattr(hit, attr):
-            return str(getattr(hit, attr))
-    raise ValueError(f"Cannot extract chunk_id from hit: {hit!r}")
+    return [h["chunk_id"] for h in _retrieve(query, k)]
 
 # ---------------------------------------------------------------------------
 # STATE

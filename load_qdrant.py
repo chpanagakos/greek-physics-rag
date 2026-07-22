@@ -4,15 +4,17 @@ import numpy as np
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, PointStruct, VectorParams
 
+from paths import CHUNKS, EMBEDDINGS, IDS, QDRANT
+
 COLLECTION_NAME = "chunks"
 
-embeddings = np.load("embeddings.npy")
+embeddings = np.load(EMBEDDINGS)
 texts = []
 
-with open("ids.json", "r", encoding="utf-8") as f:
+with open(IDS, "r", encoding="utf-8") as f:
     ids = json.load(f)
 
-with open("chunks.jsonl", "r", encoding="utf-8") as f:
+with open(CHUNKS, "r", encoding="utf-8") as f:
     for line in f:
         record = json.loads(line)
         texts.append(record["text"])
@@ -27,7 +29,7 @@ print(len(texts))
 print(len(ids))
 print(embeddings.shape[0])
 
-client = QdrantClient(path="./qdrant_data")
+client = QdrantClient(path=str(QDRANT))
 
 if client.collection_exists(collection_name=COLLECTION_NAME):
     client.delete_collection(collection_name=COLLECTION_NAME)

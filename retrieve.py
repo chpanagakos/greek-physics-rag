@@ -10,7 +10,9 @@ toward the wrong sub-topic.
 from FlagEmbedding import BGEM3FlagModel
 from qdrant_client import QdrantClient
 
-QDRANT_PATH = "./qdrant_data"
+from paths import QDRANT
+
+QDRANT_PATH = str(QDRANT)
 COLLECTION = "chunks"
 DEFAULT_K = 5
 
