@@ -165,6 +165,14 @@ def parse_response(
     return data
 
 
+def validate_citations(cited: list, retrieved_ids: set) -> None:
+    """Reject citations of chunks that were never retrieved. A fabricated
+    ID is a provenance failure and must raise, not render."""
+    fabricated = [c for c in cited if c not in retrieved_ids]
+    if fabricated:
+        raise ValueError(f"Cited chunk IDs not in retrieved set: {fabricated}")
+
+
 def diagnose(
     problem: str,
     attempt: str,
@@ -210,7 +218,11 @@ def diagnose(
         raw_text, taxonomy, require_citations=use_retrieval and bool(chunks)
     )
 
-    # result = parse_response(raw_text, taxonomy)
+    validate_citations(
+        result["cited_chunk_ids"],
+        {c["chunk_id"] for c in chunks},
+    )
+
     result["prompt"] = prompt
     return result
 
