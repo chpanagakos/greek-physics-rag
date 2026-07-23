@@ -36,7 +36,3 @@ embeddings.npy
 
 # qdrant embedded store: ship data, not runtime locks
 qdrant_data/.lock
-
-# eval files
-predictions.jsonl
-pools.json
