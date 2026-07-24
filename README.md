@@ -231,41 +231,41 @@ python load_qdrant.py
 > application, the evaluation and the tests all work without this step. Follow
 > it **only** to reproduce ingestion end to end: it pulls several GB of OCR
 > dependencies, needs a system poppler install, and is slow without a GPU.
-
-**System prerequisite:** `pdf2image` shells out to poppler.
-
-```bash
-sudo apt install poppler-utils        # Debian/Ubuntu
-pip install -r requirements-ingest.txt
-```
-
-Fetch the source document — Physics, upper secondary, Chapter 5 (Collisions),
-published by ΙΤΥΕ «Διόφαντος» and not redistributed here:
-
-```bash
-mkdir -p data/raw data/interim
-curl -L -o data/raw/FK_K5_E_A.pdf \
-  https://www.study4exams.gr/physics_k/pdf/FK_K5_E/FK_K5_E_A.pdf
-```
-
-Then run the pipeline:
-
-```bash
-python ocr_pipeline.py --input data/raw/FK_K5_E_A.pdf --output data/interim
-python clean.py           # boilerplate removal  → FK_K5_E_A.clean.md
-python chunking.py        # exercise-level split → data/chunks.jsonl (62 records)
-python embed.py           # BGE-M3 dense vectors → data/embeddings.npy
-python load_qdrant.py     # rebuilds the embedded collection
-```
-
-OCR is the slow stage: 123 pages at 250 DPI, GPU strongly preferred. Pages are
-written individually and skipped if already present, so an interrupted run
-resumes with `--pages`/`--start-page` or by simply re-running the same command.
-
-Output is not guaranteed to be byte-identical to the shipped corpus: OCR
-results depend on the model version and rendering DPI, so a rebuild may shift
-chunk boundaries and therefore chunk IDs. Rebuild the vector store and the
-evaluation gold labels together if this happens.
+>
+>**System prerequisite:** `pdf2image` shells out to poppler.
+>
+>```bash
+>sudo apt install poppler-utils        # Debian/Ubuntu
+>pip install -r requirements-ingest.txt
+>```
+>
+>Fetch the source document — Physics, upper secondary, Chapter 5 (Collisions),
+>published by ΙΤΥΕ «Διόφαντος» and not redistributed here:
+>
+>```bash
+>mkdir -p data/raw data/interim
+>curl -L -o data/raw/FK_K5_E_A.pdf \
+>  https://www.study4exams.gr/physics_k/pdf/FK_K5_E/FK_K5_E_A.pdf
+>```
+>
+>Then run the pipeline:
+>
+>```bash
+>python ocr_pipeline.py --input data/raw/FK_K5_E_A.pdf --output data/interim
+>python clean.py           # boilerplate removal  → FK_K5_E_A.clean.md
+>python chunking.py        # exercise-level split → data/chunks.jsonl (62 records)
+>python embed.py           # BGE-M3 dense vectors → data/embeddings.npy
+>python load_qdrant.py     # rebuilds the embedded collection
+>```
+>
+>OCR is the slow stage: 123 pages at 250 DPI, GPU strongly preferred. Pages are
+>written individually and skipped if already present, so an interrupted run
+>resumes with `--pages`/`--start-page` or by simply re-running the same command.
+>
+>Output is not guaranteed to be byte-identical to the shipped corpus: OCR
+>results depend on the model version and rendering DPI, so a rebuild may shift
+>chunk boundaries and therefore chunk IDs. Rebuild the vector store and the
+>evaluation gold labels together if this happens.
 
 ### Evaluation
 
