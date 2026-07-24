@@ -12,204 +12,310 @@ license: other
 
 # Auditable Misconception Diagnosis for Greek Physics Exams
 
-A retrieval-augmented generation (RAG) pipeline for tutor review.
+A reviewable RAG pipeline for analysing incorrect student solutions to Greek Panhellenic physics problems.
 
-Given a collision problem from the Greek national university-entrance examinations (Panhellenic exams) and a student's incorrect attempt, the system retrieves relevant course material and identifies **candidate misconceptions** from a closed, tutor-audited taxonomy. Its output is intended for tutor review.
+[**Live demo**](https://huggingface.co/spaces/chpanagakos/greek-physics-rag)
+·
+[**Evaluation**](#evaluation)
+·
+[**Run locally**](#run-locally)
 
-**Live demo:** https://huggingface.co/spaces/chpanagakos/greek-physics-rag
+[![tests](https://github.com/chpanagakos/greek-physics-rag/actions/workflows/tests.yml/badge.svg)](https://github.com/chpanagakos/greek-physics-rag/actions/workflows/tests.yml)
 
-The public demonstrator is deployed on Hugging Face Spaces and uses a shared Gemini free-tier quota, so temporary quota exhaustion may occasionally interrupt requests.
+Given a problem and a student's attempted solution, the system retrieves relevant curriculum material, proposes candidate labels from a closed tutor-reviewed taxonomy, and displays the source passages for review. A tutor makes the final determination; the system is a diagnostic aid, not a grader.
 
-Ten worked cases are available as click-to-fill examples; each runs the live pipeline rather than replaying a cached result.
+Ten worked cases are available in the demo as click-to-fill examples. Each runs the live pipeline rather than replaying a cached result.
 
-*Privacy:* Inputs are sent to the configured Gemini API for generation. Do not enter student names, contact details or other sensitive information into the public demo.
+**Current scope:** one chapter of the Greek upper-secondary physics curriculum (collisions), 62 indexed chunks, 15 diagnostic labels, and one end-to-end workflow.
 
----
+**Project status:** public demonstrator, reproducible evaluation harness, 19 deterministic tests in CI, and a Docker build. 
 
-## Purpose and positioning
+> The public demo sends submitted text to the configured Gemini API. Do not enter names, contact details, or other sensitive student information. The shared free-tier quota may occasionally be exhausted.
 
-Frontier language models can often solve standard Panhellenic physics problems without retrieval. This project addresses a different task: analysing a student's attempted solution against a tutor-audited misconception framework and presenting relevant course material alongside the proposed diagnosis.
+## Why this project
 
-The intended contribution is a reviewable diagnostic workflow rather than an additional problem-solving interface.
+Frontier language models can often solve standard Panhellenic physics problems without retrieval. This project addresses a different question: where does a student's attempted solution diverge from an appropriate method, and what evidence can a tutor inspect when reviewing that diagnosis?
 
-The demo includes an ablation toggle that runs the same case with retrieval enabled or disabled. On the 10-case development set described below, retrieval did not change the correct diagnosis in nine cases, although it provided source material for inspection. In one case, retrieval changed an incorrect diagnosis to the correct one. A separate case shows that visible citations do not by themselves establish evidential support: the model produced the correct tag while citing irrelevant retrieved material. The current system therefore provides an inspectable diagnostic trail, but it does not guarantee citation correctness.
+The emphasis is therefore not on producing another worked answer. It is on combining a defined diagnostic vocabulary, retrieved course material, structured output, explicit validation, and evaluation of the retrieval and generation stages.
 
-## Corpus ingestion: Greek text and mathematical notation
+| | |
+|--:|:--|
+| **Input** | A Greek physics problem and one attempted solution |
+| **Output** | A diagnosis, 1–3 candidate labels, and cited source IDs |
+| **Human role** | Inspect the retrieved passages and confirm or reject the candidates |
+| **Current domain** | Momentum and collisions in Panhellenic upper-secondary physics |
 
-The corpus is Greek-language physics exam material dense with mathematical notation. The general-purpose OCR systems tested during development performed poorly on this combination: Greek text and Greek-letter math symbols (ω, φ, λ as *variables*, not language) collide constantly.
+## Pipeline
 
-The ingestion pipeline uses Surya in math mode, converts `<math>` output to inline LaTeX delimiters, and emits page-separated Markdown for subsequent chunking and retrieval.
-
-Pages are rendered, processed and written individually with atomic file operations, allowing interrupted runs to resume from the page in progress. A subsequent cleaning pass removes publisher boilerplate using word-fingerprint and positional rules. Manual comparison with the source covered all 390 removed lines from an input of 6,976 lines and found them to be boilerplate.
-
-## Architecture
-
+```text
+Greek physics PDFs
+    │
+    ├─ Surya OCR in math mode
+    │  page-separated Markdown + inline LaTeX
+    │
+    ├─ rule-based cleaning and manual review
+    │
+    ├─ exercise-level chunking
+    │  one exercise + worked solution per chunk
+    │
+    ├─ BGE-M3 dense embeddings
+    │
+    └─ Qdrant embedded vector store
+           │
+problem ───┴─ top-k retrieval
+attempt ───── generation prompt
+taxonomy ──── Gemini API
+                   │
+                   ├─ structured diagnosis
+                   ├─ candidate taxonomy labels
+                   └─ cited retrieved-chunk IDs
+                              │
+                              └─ schema, label, and citation-ID validation
+                                         │
+                                         └─ Gradio review interface
 ```
-PDF exam material (Greek)
-   │  Surya OCR (math_mode) → Markdown + inline LaTeX
-   │  cleaning (rule-based boilerplate removal with manual review)
-   ▼
-Chunking — one exercise + worked solution per chunk (62 chunks)
-   │  BGE-M3 dense embeddings (multilingual, selected for satisfactory Greek retrieval behaviour in project testing)
-   ▼
-Qdrant vector store (embedded mode; payload carries chunk_id + text,
-   │                  frozen at index time — provenance by construction)
-   │  query = problem statement ONLY (see Design decisions)
-   ▼
-Retrieval: top-k relevant worked solutions + theory
-   │
-   ▼
-Generation (frontier LLM; provider isolated to one function), instructed to:
-   1. ground the diagnosis in retrieved chunks (cited by ID)
-   2. map the student's error to 1–3 candidate tags from the
-      closed misconception taxonomy (suggestion only — tutor confirms)
-   Output is a JSON contract, validated in code: tags outside the
-   closed list are rejected deterministically.
-   ▼
-UI (Gradio): input → diagnosis → candidate tags → cited chunk IDs
-             → audit panel showing retrieved chunks verbatim
-             (with a retrieval on/off ablation toggle)
-```
 
-## The misconception taxonomy
+The problem statement is the deployed retrieval query. The student's attempt is supplied to the generation model but does not currently influence the retrieval vector. The reasoning behind that decision, and the experiment that challenges it, are described under [Evaluation](#evaluation).
 
-A closed label list for momentum-and-collision misconceptions: 15 tags in four categories (vector/directional errors, conservation-law misapplications, system/state misidentification, algebraic execution), plus an explicit `NO_TAG_MATCH` escape hatch so the model is never forced into a bad fit. The scope matches the corpus, which covers collisions proper alongside explosions and momentum-conservation questions.
+## Corpus ingestion
 
-**Provenance:** the taxonomy was initially drafted with AI assistance from the corpus and subsequently reviewed by the author. During review, `ERR_SYS_ELASTIC_EXCHANGE` was defined as a *method-efficiency* label for a correct but unnecessarily extended solution to an equal-mass elastic collision. The taxonomy can therefore describe solution method as well as physical correctness. Planned work includes a complete per-label review informed by previously graded student solutions and an explicit outcome for fully correct work.
+The source material combines Greek prose with dense mathematical notation. General-purpose OCR systems tested during development had difficulty distinguishing Greek language from Greek letters used as variables, including ω, φ, and λ.
 
-Example entries:
+The ingestion pipeline uses Surya in math mode, converts `<math>` output to inline LaTeX delimiters, and writes each processed page atomically. Interrupted runs can therefore resume from the page in progress rather than restarting the document.
 
-- `ERR_CONSV_KE_PLASTIC` — student sets K_initial = K_final for a completely inelastic collision
-- `ERR_VEC_SUB_SIGN` — sign convention dropped when velocities oppose; Δv computed as v − v instead of v − (−v)
-- `ERR_MATH_PCT_BASE` — percentage energy loss computed against the final energy instead of the initial
-- `ERR_SYS_ELASTIC_EXCHANGE` — correct result, missed best practice (see above)
+A subsequent cleaning pass removes publisher boilerplate using positional and word-fingerprint rules. Manual comparison with the source covered all 390 removed lines from an input of 6,976 lines and found them to be boilerplate. The cleaned material is divided into 62 exercise-level chunks.
 
-The generation model proposes candidate labels from the fixed taxonomy, and a tutor makes the final determination. The parser rejects labels outside the defined set, allowing the taxonomy to be reviewed and revised independently of the model.
+The source PDF is not redistributed in this repository. It is published by ΙΤΥΕ «Διόφαντος» and is freely available at the link in [Data and licensing](#data-and-licensing); the ingestion pipeline is reproducible against it, and [Rebuilding the corpus from source](#rebuilding-the-corpus-from-source) gives the exact commands. What ships here is the derived material — 62 chunks and the embedded Qdrant collection — so the application runs without re-running OCR.
 
-## Licence and corpus
+## Diagnostic taxonomy
 
-**Code** (`*.py`, configuration, `taxonomy.json`): MIT.
+The closed taxonomy contains 15 labels in four categories:
 
-**Corpus** (`chunks.jsonl` and the text payloads in the shipped Qdrant collection): derived from Greek upper-secondary physics material published by ΙΤΥΕ «Διόφαντος», licensed CC BY-NC-SA. These files are redistributed here under the same licence, with attribution to ΙΤΥΕ «Διόφαντος» as the original distributor. They are OCR-extracted and chunked, not modified in substance.
+- vector and directional errors;
+- conservation-law misapplications;
+- system or state misidentification;
+- algebraic execution.
 
-The MIT licence does not extend to the corpus material.
+An additional `NO_TAG_MATCH` outcome allows the model to abstain when none of the defined labels is appropriate.
 
-## Design decisions
+The taxonomy was drafted with AI assistance from the corpus and subsequently reviewed by the author. It describes solution method as well as physical correctness: for example, `ERR_SYS_ELASTIC_EXCHANGE` can identify a correct but unnecessarily extended solution that overlooks the equal-mass velocity-exchange property.
 
-**Frontier model rather than a smaller model.** Retrieval supplies relevant material, but the task still requires comparing a student's attempt with a worked solution and mapping the difference to a taxonomy label. Preliminary project testing found smaller models less reliable on this diagnostic step, particularly with Greek-language input. The interface therefore uses a frontier model and provides an ablation toggle for examining the contribution of retrieval separately.
+The generation model can propose labels only from this fixed set. The taxonomy can therefore be reviewed and revised independently of the model used for generation.
 
-**Query = problem statement only.** The student's attempt is included verbatim in the generation prompt but not in the retrieval query. On the development set, combining the problem and attempt improved Recall@5 from 80% to 100%. However, those attempts were uniformly articulate, AI-generated prose and may not represent sparse algebra, ambiguous wording or incorrect terminology in real student work. The deployed system retains the more controlled problem-only query pending evaluation on a held-out set with more varied attempts. A possible alternative is to embed the attempt separately and merge the two rankings.
+## What the code validates
 
-**Prompt block ordering.** Retrieved chunks appear first, task instructions last, and the taxonomy, submitted problem and attempt occupy the middle. This arrangement follows the positional-attention findings reported by Liu et al. and gives prominent positions to the grounding material and citation instructions.
+The pipeline distinguishes deterministic contract checks from judgements that still require human review.
 
-**One exercise + solution per chunk.** Exercises are the corpus's natural retrieval unit: a hit arrives as a complete worked example the diagnosis can cite as a whole, and chunk IDs (`erotisi-35`) map one-to-one to sources a tutor recognizes. Finer granularity (solution-step chunks) is a measured trade-off deferred until retrieval metrics justify it.
+| Enforced in code | Left to tutor review |
+|---|---|
+| Output conforms to the expected JSON structure | Whether the diagnosis is educationally appropriate |
+| Every candidate label belongs to the closed taxonomy | Whether the selected label best describes the student's reasoning |
+| Every cited ID belongs to the retrieved set | Whether each cited passage actually supports the associated claim |
+| Invalid output raises an error before reaching the interface | Whether an alternative interpretation is preferable |
 
-**Non-agentic pipeline.** The system uses one retrieve → generate → validate pass. At the current scope, this provides a direct execution path whose retrieval results and structured output can be inspected independently.
+`validate_citations()` enforces that cited IDs are a subset of the retrieved chunk IDs. This prevents fabricated identifiers from reaching the interface; it does not determine semantic support.
 
 ## Worked example
 
-Problem: sphere A (mass m, speed v) collides head-on and perfectly inelastically with resting sphere B (mass 2m); find the post-collision speed.
+**Problem.** Sphere A, with mass $m$ and speed $v$, collides head-on and perfectly inelastically with a stationary sphere B of mass $2m$. Find the post-collision speed.
 
-Student attempt: applies conservation of *kinetic energy* through the collision, deriving V = v/√3.
+**Student attempt.** Conserves kinetic energy through the collision and obtains $V = v/\sqrt{3}$.
 
-System output (retrieval on): candidate tag `ERR_CONSV_KE_PLASTIC`; justification in Greek stating the student conserved kinetic energy through a plastic collision where energy is necessarily lost; citations `erotisi-35`, `erotisi-36` — two corpus problems that explicitly state a 25% kinetic-energy loss in plastic collisions. The cited claim was verified against the corpus text directly.
+**Retrieval-enabled output.** Candidate label `ERR_CONSV_KE_PLASTIC`, with a Greek explanation that kinetic energy is not conserved in a perfectly inelastic collision. The output cites `erotisi-35` and `erotisi-36` — two corpus problems that explicitly state a 25% kinetic-energy loss in plastic collisions — and the interface displays both retrieved passages for inspection. The cited claim was verified against the corpus text directly.
 
-Same input, retrieval off (ablation): same tag, no citations. This is the typical ablation outcome on textbook-clear errors; the Evaluation section covers the one case where disabling retrieval changed the diagnosis itself.
+**Retrieval-disabled output.** The same candidate label and no citations. This is the common ablation result for textbook-clear errors: retrieval adds inspectable source context without changing the diagnosis. The Evaluation section covers the one case where it did.
 
 ## Evaluation
 
-Measured on a 10-case development set (`eval/cases.jsonl`): one (problem, incorrect attempt) pair for each of ten evaluated taxonomy labels. The attempts are synthetic and AI-generated; the gold misconception tags and source chunks were assigned manually under a fixed rule, without reference to retrieval rank or chunk ID. The results are reproducible: `python eval/run_cases.py` produces the predictions, and the `eval/score_*.py` scripts score them offline.
+The repository includes a resumable prediction runner and offline scorers for tag accuracy, retrieval quality, query construction, and citation validity.
 
-**Tag accuracy** — does the system's first candidate match the hand-assigned tag?
+### Development-set protocol
 
-| condition | top-1 | any-match | mean candidates |
-|---|---|---|---|
-| retrieval on | 10/10 | 10/10 | 1.20 |
-| retrieval off (ablation) | 9/10 | 9/10 | 1.30 |
+The current set contains 10 synthetic, AI-generated attempted solutions, covering 10 of the 15 taxonomy labels. Misconception labels and source-chunk relevance were assigned manually under a fixed rule, blind to retrieval rank and chunk identifier.
 
-These are development-set results. The taxonomy and cases were produced through related AI-assisted processes, several cases closely resemble their corresponding label descriptions. Each of the ten evaluated labels is represented by a single case; five labels are not yet covered. The current result validates the evaluation pipeline but does not establish generalisation. The next evaluation will use a held-out set derived independently from errors observed in previously graded student work.
+This is a development set: the taxonomy and cases were produced through related AI-assisted processes, and the relevance pool was formed from the union of the top 10 results under two query configurations. It is useful for validating the harness, comparing design choices, and exposing failure modes; it is not evidence of generalisation.
 
-**Ablation case study.** With retrieval enabled, case c004 is diagnosed correctly as `ERR_SYS_STATE_ID`; without retrieval, that label is absent from the candidates. The result was consistent across three runs per condition. For the motion described in this case, the highest-ranked retrieved chunk states that the object's velocity at its highest point is zero—the fact omitted from the student's attempt. This is an illustrative case rather than an aggregate result.
+The planned held-out set will be constructed independently from errors observed in previously graded student work, vary the form and articulateness of the attempts, and use an exhaustive relevance review of the 62-chunk corpus.
 
-**Retrieval quality** — do the top-k chunks include the ones a tutor would need to cite?
+### Results
 
-| | @1 | @3 | @5 |
-|---|---|---|---|
-| Recall (≥1 gold chunk retrieved) | 60% | 80% | 80% |
-| Full recall (all gold chunks retrieved) | 50% | 50% | 60% |
+**Candidate-label accuracy**
 
-MRR 0.700. In two cases no gold chunk appears in the top 5.
+| Condition | Top-1 | Any match | Mean candidates |
+|---|---:|---:|---:|
+| Retrieval enabled | 10/10 | 10/10 | 1.20 |
+| Retrieval disabled | 9/10 | 9/10 | 1.30 |
 
-The two missed cases form a near-minimal pair — a bullet embedding into wood, in one case vertically onto the floor (momentum not conserved on the collision axis), in the other horizontally on a smooth plane (momentum conserved; the error lies elsewhere). The surface text is nearly identical while the physics and the correct tags differ, and the gold chunk for one case was in fact retrieved at rank 2 for the other: the topic is matched but the configuration is not. This quantifies a limitation previously observed anecdotally (a one-word πλαστικά→ελαστικά query swap barely reordering results) and motivates the planned hybrid dense+sparse retrieval using BGE-M3's lexical weights.
+**Retrieval quality**
 
-**Query construction.** The deployed system embeds only the problem statement. On the development set, a combined problem-and-attempt query achieved Recall@5 of 10/10, compared with 8/10 for the deployed configuration, and recovered both complete misses. Because all attempts in this set are articulate AI-generated prose, the comparison does not cover shorter algebraic responses or misleading terminology. The held-out evaluation will include greater variation in response form before the retrieval query is revised.
+| Metric | @1 | @3 | @5 |
+|---|---:|---:|---:|
+| Recall: at least one relevant chunk retrieved | 60% | 80% | 80% |
+| Full recall: all relevant chunks retrieved | 50% | 50% | 60% |
 
-**Citation validity and support.** Across the ten retrieval-enabled runs, all 17 cited chunk IDs were present in the retrieved set. The parser currently validates taxonomy labels but does not yet enforce this citation constraint. Citation selection was less complete: the model cited 55% of the gold chunks made available by retrieval. In the vertical-collision case, no relevant chunk was retrieved, yet the model produced the correct label from parametric knowledge and cited four non-supporting chunks. Citation IDs therefore provide inspectable provenance, but the current system does not guarantee that each citation supports the associated claim.
+**MRR:** 0.700
 
-**Protocol note.** Gold chunks were labelled from the union of the top 10 results under two query configurations. Material absent from both result pools could therefore not receive a relevance label, which may make the reported recall optimistic relative to an independently constructed gold set. The held-out evaluation will instead use an exhaustive relevance audit of the 62-chunk corpus.
+**Citation-ID validity before enforcement:** 17/17 cited IDs belonged to the retrieved set.
 
-## Limitations
+### What the evaluation revealed
 
-- **Corpus:** the index contains 62 chunks from one chapter (ΚΕΦΑΛΑΙΟ 5, collisions) of Greek upper-secondary Panhellenic material. Out-of-scope detection has not yet been implemented but still receives a diagnosis.
-- **Retrieval:** the current retriever is dense-only. Recall@5 was 0.80 on the development set, including two complete misses involving a configuration-level distinction. Hybrid dense and sparse retrieval remains planned work.
-- **Evaluation:** the reported results use a 10-case development set with related authorship between the taxonomy and cases and pooled relevance labelling. A held-out, independently constructed set is required to assess generalisation.
-- **Citations:** all cited IDs in the development runs belonged to the retrieved set, although this constraint is not yet enforced programmatically. Whether each citation supports the associated claim remains subject to tutor review.
-- **Figures and graphs:** the corpus is text and LaTeX. Questions whose content depends on a diagram, or whose expected answer is a sketched graph, are outside what the system can ground a diagnosis in.
-- **Unit of diagnosis:** the input and output schema is designed for one problem and one attempt per submission. Multi-part exam questions (Γ1–Γ4) should be submitted separately; submitted as a single block, the output schema degrades without warning.
-- **Quota:** the deployed demo runs on the Gemini free tier, shared across all visitors and exhaustible.
-- **Not autonomous:** output is 1–3 *candidate* tags for a tutor to confirm. The system is a diagnostic aid, not a grader.
+**Retrieval changed one diagnosis.** In case `c004`, retrieval produced the correct `ERR_SYS_STATE_ID` candidate; without retrieval, that label was absent. The result was stable across three runs per condition. The highest-ranked chunk supplied the fact omitted from the student's attempt.
+
+**Dense retrieval missed a configuration-level distinction.** The two complete Recall@5 misses form a near-minimal pair: a bullet embeds in wood vertically against the floor in one problem and horizontally on a smooth plane in the other. Their surface wording is similar, but momentum conservation applies differently along the collision axis. The retriever identified the topic but confused the configurations, motivating planned hybrid dense and sparse retrieval.
+
+**The alternative query performed better on this set.** Combining the problem and attempt reached Recall@5 of 10/10, compared with 8/10 for the deployed problem-only query. The attempts in this set are uniformly articulate AI-generated prose, so the comparison does not show whether the advantage persists for bare algebra, ambiguous wording, or incorrect terminology. The problem-only query remains deployed until the held-out evaluation covers those forms.
+
+**Valid citation IDs do not guarantee support.** The model cited 55% of the relevant chunks made available by retrieval. In one case, retrieval returned no relevant material, yet the model produced the correct label from parametric knowledge and cited four non-supporting chunks. Citation IDs make that failure inspectable; semantic support remains a human judgement in the current system.
+
+## Design choices
+
+**Exercise-level chunks.** Each chunk contains one exercise and its worked solution. A retrieval result therefore arrives as a complete example with a stable source ID (`erotisi-35`) that a tutor recognises. Step-level chunking remains a future experiment if retrieval metrics justify the additional granularity.
+
+**Frontier generation model.** Retrieval supplies relevant material, but the model must still compare an attempted solution with the worked method and map the divergence to a taxonomy label. Preliminary project testing found smaller models less reliable on this step, particularly with Greek-language input.
+
+**Single-pass pipeline.** The system uses one retrieve → generate → validate pass. This keeps retrieval results, generated output, and validation failures independently inspectable.
+
+**Prompt ordering.** Retrieved passages appear first, task instructions last, and the taxonomy, problem, and attempt occupy the middle. This follows the positional-attention findings reported by Liu et al. in *Lost in the Middle*.
+
+A dated record of scope and design changes is available in [`SPEC.md`](SPEC.md).
+
+## Scope and limitations
+
+- **Domain:** the index covers one chapter of Greek upper-secondary physics. Out-of-scope inputs are not currently detected but will still receive a diagnosis.
+- **Retrieval:** the current system uses dense retrieval only. Recall@5 was 0.80 on the development set, including two complete misses.
+- **Evaluation:** the reported results come from a 10-case development set. Primary performance estimates are deferred to an independently constructed held-out set.
+- **Citation support:** cited IDs are validated against the retrieved set, but semantic support is not verified programmatically.
+- **Visual material:** diagrams and graph-sketching tasks are outside the text-and-LaTeX corpus.
+- **Input unit:** the validated input format is one problem and one attempted solution. Multi-part questions (Γ1–Γ4) should be submitted separately; combined submissions are outside the validated input format.
+- **Human review:** output consists of candidate labels for tutor confirmation. The system is not an autonomous grader.
+- **Availability:** the public demo uses a shared Gemini free-tier quota.
+
+## Run locally
+
+### Prerequisite
+
+The embedded Qdrant database is tracked with [Git LFS](https://git-lfs.com). Install and initialise Git LFS before cloning:
+
+```bash
+git lfs install
+git clone https://github.com/chpanagakos/greek-physics-rag
+cd greek-physics-rag
+```
+
+If the repository was cloned without Git LFS, run `git lfs pull` before starting the application. Otherwise the Qdrant database will be a pointer file and SQLite will report that it is not a database.
+
+### Application
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+export GEMINI_API_KEY=...
+python app.py
+```
+
+The Gradio interface is served at `http://localhost:7860`.
+
+To rebuild the embedded collection:
+
+```bash
+python embed.py
+python load_qdrant.py
+```
+
+### Rebuilding the corpus from source
+
+\> [!NOTE]**This step is not required to run the system.** The repository ships the derived corpus > (62 chunks and the embedded Qdrant collection), so the application, the > evaluation and the tests all work without this step. Follow it only to > reproduce ingestion end to end: it pulls several GB of OCR dependencies, > needs a system poppler install, and is slow without a GPU.
+
+The repository ships the derived corpus, so this is **only** needed to reproduce the ingestion pipeline end to end.
+
+**System prerequisite:** `pdf2image` shells out to poppler.
+
+```bash
+sudo apt install poppler-utils        # Debian/Ubuntu
+pip install -r requirements-ingest.txt
+```
+
+Fetch the source document — Physics, upper secondary, Chapter 5 (Collisions),
+published by ΙΤΥΕ «Διόφαντος» and not redistributed here:
+
+```bash
+mkdir -p data/raw data/interim
+curl -L -o data/raw/FK_K5_E_A.pdf \
+  https://www.study4exams.gr/physics_k/pdf/FK_K5_E/FK_K5_E_A.pdf
+```
+
+Then run the pipeline:
+
+```bash
+python ocr_pipeline.py --input data/raw/FK_K5_E_A.pdf --output data/interim
+python clean.py           # boilerplate removal  → FK_K5_E_A.clean.md
+python chunking.py        # exercise-level split → data/chunks.jsonl (62 records)
+python embed.py           # BGE-M3 dense vectors → data/embeddings.npy
+python load_qdrant.py     # rebuilds the embedded collection
+```
+
+OCR is the slow stage: 123 pages at 250 DPI, GPU strongly preferred. Pages are
+written individually and skipped if already present, so an interrupted run
+resumes with `--pages`/`--start-page` or by simply re-running the same command.
+
+Output is not guaranteed to be byte-identical to the shipped corpus: OCR
+results depend on the model version and rendering DPI, so a rebuild may shift
+chunk boundaries and therefore chunk IDs. Rebuild the vector store and the
+evaluation gold labels together if this happens.
+
+### Evaluation
+
+```bash
+python eval/run_cases.py
+python eval/run_cases.py --no-retrieval
+python eval/score_tags.py
+python eval/score_retrieval.py
+python eval/score_query_construction.py
+python eval/score_citations.py
+```
+
+The two prediction commands call the configured generation API. The scoring commands run offline over saved predictions, so every reported number is recomputable from the files in the repository without API access.
+
+### Tests
+
+```bash
+pip install -r requirements-dev.txt
+pytest tests/ -v
+```
+
+The deterministic suite contains 19 tests covering the parser contract, taxonomy integrity, citation-ID validation, and evaluation-file invariants. It runs in CI on every push without API calls or model downloads.
+
+### Docker
+
+```bash
+docker build -t greek-physics-rag .
+docker run --rm -p 7860:7860 \
+  -e GEMINI_API_KEY=... \
+  greek-physics-rag
+```
+
+The first container start downloads BGE-M3 (approximately 4.5 GB). Mount a volume at `/home/app/.cache/huggingface` to retain the model cache across runs.
+
+## Data and licensing
+
+**Code:** MIT.
+
+**Corpus:** `chunks.jsonl` and the text payloads in the distributed Qdrant collection are derived from Greek upper-secondary physics material published by ΙΤΥΕ «Διόφαντος» under CC BY-NC-SA. The extracted and chunked material is redistributed under the same licence, with attribution to ΙΤΥΕ «Διόφαντος».
+
+The MIT licence does not extend to the corpus.
+
+Source: [study4exams.gr — ΚΕΦΑΛΑΙΟ 5: ΚΡΟΥΣΕΙΣ](https://www.study4exams.gr/physics_k/pdf/FK_K5_E/FK_K5_E_A.pdf)
 
 ## Development and authorship
 
-I designed the architecture and made every design decision documented above. Implementation code was written in collaboration with LLM assistants (Claude, ChatGPT, Gemini), with my ownership at the decision, review, and explanation level; I tested the implementation, audited the taxonomy, and manually assigned all evaluation labels.
-
-## Running locally
-
-**Prerequisite: [git-lfs](https://git-lfs.com).** The shipped Qdrant store is a binary tracked with Git LFS. Cloning without git-lfs installed checks out a small pointer text file in its place, and retrieval later fails with `sqlite3.DatabaseError: file is not a database`. Install git-lfs first (`git lfs install`, once per user); if you have already cloned, `git lfs pull` fetches the real file.
-
-```bash
-git clone https://github.com/chpanagakos/greek-physics-rag
-cd greek-physics-rag
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-export GEMINI_API_KEY=...   # provider is isolated to one function; swappable
-python app.py               # Gradio UI at localhost:7860
-
-# The Qdrant collection ships with the repo (62 chunks, embedded mode).
-# To rebuild it from source instead:
-python embed.py        # data/chunks.jsonl → data/embeddings.npy (GPU optional)
-python load_qdrant.py  # data/embeddings.npy → local Qdrant collection
-
-# To reproduce the evaluation numbers:
-python eval/run_cases.py                    # predictions, retrieval on (API calls)
-python eval/run_cases.py --no-retrieval     # ablation condition (API calls)
-python eval/score_tags.py                   # tag accuracy (offline)
-python eval/score_retrieval.py              # Recall@k, MRR (offline)
-python eval/score_query_construction.py     # query experiment (offline)
-python eval/score_citations.py              # citation validity (offline)
-```
-
-## Status
-The end-to-end demonstrator is deployed on Hugging Face Spaces and includes OCR ingestion, preprocessing, chunking, embedding, Qdrant retrieval, structured diagnosis and a Gradio interface with a retrieval ablation toggle. The repository also includes a reproducible evaluation harness covering tag accuracy, Recall@k, MRR, query construction and citation validity on the 10-case development set.
-
-Planned work includes a held-out test set derived from grading experience, deterministic tests for parsing and validation, enforcement of citation validity, and evaluation of hybrid dense and sparse retrieval.
-
-## Scope
-
-The current scope covers one chapter (collisions), one exam family and one diagnostic workflow. It is an evaluated technical demonstrator rather than a complete tutoring platform.
+I designed the architecture and developed the system with assistance from LLM tools, including Claude, ChatGPT, and Gemini. I reviewed and tested the implementation, evaluated the main design choices, audited the misconception taxonomy, and manually assigned the evaluation labels for misconceptions and source-chunk relevance. The OCR ingestion module was generated by an LLM assistant and is retained with that provenance recorded here and in the module itself.
 
 ## References and components
 
-**Prompt block ordering** — Liu, N.F., Lin, K., Hewitt, J., Paranjape, A., Bevilacqua, M., Petroni, F., Liang, P. (2024). *Lost in the Middle: How Language Models Use Long Contexts.* Transactions of the ACL, 12:157–173. [arXiv:2307.03172](https://arxiv.org/abs/2307.03172) · [ACL Anthology](https://aclanthology.org/2024.tacl-1.9/)
-
-**Embeddings** — BGE-M3 ([BAAI/bge-m3](https://huggingface.co/BAAI/bge-m3)). Chen, J., Xiao, S., Zhang, P., Luo, K., Lian, D., Liu, Z. (2024). *M3-Embedding: Multi-Linguality, Multi-Functionality, Multi-Granularity Text Embeddings Through Self-Knowledge Distillation.* Findings of the ACL 2024, 2318–2335. [arXiv:2402.03216](https://arxiv.org/abs/2402.03216)
-
-**OCR** — [Surya](https://github.com/datalab-to/surya) (datalab-to), used in math mode for Greek text with inline mathematical notation.
-
-**Vector store** — [Qdrant](https://github.com/qdrant/qdrant), Apache-2.0, run in embedded mode.
-
-**UI** — [Gradio](https://github.com/gradio-app/gradio).
-
-**Generation** — [Gemini API](https://ai.google.dev/) (gemini-2.5-flash). The provider is isolated to a single function; see Design decisions.
-
-**Corpus** — [study4exams.gr — ΚΕΦΑΛΑΙΟ 5: ΚΡΟΥΣΕΙΣ (PDF)](https://www.study4exams.gr/physics_k/pdf/FK_K5_E/FK_K5_E_A.pdf), ΙΤΥΕ «Διόφαντος». See Licence and corpus.
+- **Prompt ordering:** Liu, N. F. et al. (2024), *Lost in the Middle: How Language Models Use Long Contexts*. [arXiv](https://arxiv.org/abs/2307.03172) · [TACL](https://aclanthology.org/2024.tacl-1.9/)
+- **Embeddings:** BGE-M3, [BAAI/bge-m3](https://huggingface.co/BAAI/bge-m3). Chen, J. et al. (2024), *M3-Embedding*. [arXiv](https://arxiv.org/abs/2402.03216)
+- **OCR:** [Surya](https://github.com/datalab-to/surya), used in math mode.
+- **Vector store:** [Qdrant](https://github.com/qdrant/qdrant), embedded mode.
+- **Interface:** [Gradio](https://github.com/gradio-app/gradio).
+- **Generation:** [Gemini API](https://ai.google.dev/), currently `gemini-2.5-flash`; the provider call is isolated to one function.
