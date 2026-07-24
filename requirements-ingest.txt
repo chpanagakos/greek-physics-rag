@@ -1,0 +1,15 @@
+# Corpus-ingestion dependencies — needed ONLY to rebuild the corpus from the
+# source PDF. The served application does not import any of these; keeping
+# them out of requirements.txt keeps the deployed image and the Space build
+# free of the OCR stack.
+#
+# System prerequisite: poppler-utils (pdf2image shells out to pdfinfo and
+# pdftoppm).  Debian/Ubuntu:  sudo apt install poppler-utils
+#
+# Install:  pip install -r requirements-ingest.txt
+
+surya-ocr==0.17.1
+transformers<5
+pdf2image
+pillow
+tqdm
