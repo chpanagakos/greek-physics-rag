@@ -1,257 +1,468 @@
-# SPEC — Collisions Misconception-Diagnosis RAG Demo
+# Engineering Specification — Greek Physics Diagnostic RAG
 
-**One line:** A demo that takes a Panhellenic collisions problem and a
-student's incorrect attempt, and returns a diagnosis grounded in retrieved
-course methodology, with candidate misconception tags from a closed,
-tutor-audited taxonomy for a tutor to confirm.
+**Status:** Implemented public demonstrator  
+**Current scope:** Momentum and collisions  
+**Interface:** Gradio  
+**Last updated:** 2026-07-24
 
-This document defines the current scope and completion criteria. Proposed
-extensions are recorded in the Parking Lot, while adopted scope changes are
-documented by date in the Amendments section.
-
----
-
-## Goal
-
-A user opens the demo, supplies a collisions (κρούσεις) problem and a student's
-incorrect attempt in Greek, and receives:
-
-- a diagnosis grounded in retrieved chunks of the collisions corpus, citing the
-  chunks by ID;
-- one or more candidate misconception tags from the fixed taxonomy (suggestions
-  — a human tutor confirms);
-- the retrieved source chunks shown alongside.
-
-The current scope covers one chapter and one end-to-end diagnostic workflow.
+This document defines the implemented system, its enforced contracts, the
+evaluation protocol and the boundary of the current project. Operating
+instructions and the shorter project overview belong in the README; proposed
+extensions are listed here only where they affect future evaluation or
+architecture.
 
 ---
 
-## Architecture
+## 1. Purpose
 
+The system assists a physics tutor in reviewing an incorrect student solution
+written in Greek. Given a problem statement and the student's attempt, it:
+
+1. retrieves relevant theory or worked-solution passages from a fixed corpus;
+2. produces a diagnosis that cites passages returned by retrieval;
+3. proposes one to three labels from a closed misconception taxonomy; and
+4. displays the retrieved passages and model output for tutor review.
+
+The model output is advisory. The tutor determines whether the explanation is
+well supported and whether the proposed labels accurately describe the
+student's reasoning.
+
+---
+
+## 2. Scope
+
+### Included
+
+- Greek-language problems and student attempts.
+- The momentum-and-collisions chapter of the source corpus.
+- Dense retrieval over 62 exercise-and-solution chunks.
+- A 15-label misconception taxonomy in four categories, plus
+  `NO_TAG_MATCH`.
+- A single retrieval-and-generation pass.
+- Deterministic validation of output structure, labels and citation IDs.
+- A retrieval on/off ablation.
+- A Gradio interface, local execution, container execution and public
+  deployment.
+- An offline evaluation harness with manually assigned misconception and
+  source-relevance labels.
+
+### Excluded from the current system
+
+- Other physics chapters.
+- Automated grading or an authoritative diagnosis.
+- User accounts, longitudinal student records or multi-user persistence.
+- Agentic retrieval, query rewriting, reranking or fine-tuning.
+- Local model serving.
+- Containerised OCR ingestion.
+- A full tutor workbench or production service-level guarantees.
+
+---
+
+## 3. System contract
+
+### 3.1 Inputs
+
+The diagnostic path accepts:
+
+- a Greek physics problem statement;
+- a Greek student attempt; and
+- a retrieval mode: enabled or disabled.
+
+When retrieval is enabled, the deployed search query contains the problem
+statement only. The student attempt is passed to the generation model but is
+not included in the search query.
+
+### 3.2 Outputs
+
+The system returns:
+
+- a diagnostic explanation in Greek;
+- one to three candidate misconception labels;
+- cited corpus chunk IDs;
+- the retrieved passages and their similarity scores; and
+- the active retrieval mode.
+
+### 3.3 Enforced invariants
+
+Before an output reaches the interface, the application verifies that:
+
+- the response conforms to the expected JSON structure;
+- every proposed label belongs to the closed taxonomy; and
+- every cited chunk ID belongs to the set returned by retrieval.
+
+An invalid response is rejected rather than silently repaired. The citation
+subset rule is implemented by `validate_citations()`.
+
+### 3.4 Human-review boundary
+
+| Property | Enforced by code | Reviewed by a tutor |
+|---|:---:|:---:|
+| Valid JSON structure | Yes | No |
+| Labels belong to the taxonomy | Yes | No |
+| Cited IDs were retrieved | Yes | No |
+| A citation supports the associated claim | No | Yes |
+| A proposed label fits the student's reasoning | No | Yes |
+| The diagnosis is pedagogically useful | No | Yes |
+
+This distinction is part of the system contract: citation validity means that
+a cited identifier is traceable to retrieved material, not that textual
+support has been established automatically.
+
+---
+
+## 4. Architecture
+
+```text
+Source PDF
+  → Surya OCR and cleaning
+  → structure-aware chunking
+  → BGE-M3 dense embeddings
+  → embedded Qdrant collection
+
+Problem statement
+  → top-k retrieval ───────────────┐
+Student attempt ───────────────────┤
+Closed taxonomy ───────────────────┤
+                                   ↓
+                           prompt assembly
+                                   ↓
+                         hosted generation model
+                                   ↓
+                  schema, label and citation validation
+                                   ↓
+                      diagnosis, labels and sources
 ```
-OCR'd markdown corpus (Greek + LaTeX)         misconception taxonomy (JSON, closed list)
-   -> chunking (never split a $$...$$ block)              |
-   -> embedding (BGE-M3, dense)                           |
-   -> vector store (Qdrant, embedded mode)                |
-        |                                                 |
-   query = problem statement ONLY                         |
-   -> retrieval (top-k worked-solution / theory chunks)   |
-   -> prompt assembly (chunks, taxonomy, problem, attempt, instructions —
-        instructions last, chunks first: positional-attention ordering)
-   -> generation (hosted frontier LLM via API; provider isolated to one
-        function):
-        1. ground the explanation in retrieved chunks (cited by ID)
-        2. locate where the attempt diverges from the retrieved solution
-        3. suggest candidate tag(s) from the taxonomy (tutor confirms);
-        output is a JSON contract validated in code — tags outside the
-        closed list are rejected deterministically
-   -> web UI (problem + attempt in; diagnosis + candidate tags + sources out;
-              retrieval on/off ablation toggle; retrieved-chunks audit panel)
+
+The runtime is deliberately non-agentic. It performs one retrieval step
+followed by one generation step and one deterministic validation step.
+
+### 4.1 Component responsibilities
+
+| Component | Input | Output | Responsibility |
+|---|---|---|---|
+| OCR and cleaning | Source PDF | Page-separated Markdown | Recover Greek text and mathematical notation; remove repeated boilerplate |
+| Chunking | Clean Markdown | `data/chunks.jsonl` | Preserve one exercise with its solution and avoid splitting display-math blocks |
+| Embedding | Corpus chunks | Dense vectors and ID mapping | Encode Greek scientific text with BGE-M3 |
+| Vector store | Vectors and payloads | Embedded Qdrant collection | Persist each vector with its immutable `chunk_id` and text |
+| Retrieval | Problem statement | Top-k chunks with scores | Select candidate context for generation and audit |
+| Prompt assembly | Problem, attempt, chunks, taxonomy | Model request | Separate source material from user content and place instructions last |
+| Generation | Model request | Structured diagnosis | Produce an explanation, candidate labels and citations |
+| Validation | Structured diagnosis and retrieved IDs | Accepted output or error | Enforce the deterministic output contract |
+| Interface | User input and accepted output | Gradio view | Expose the diagnostic path, ablation control and source audit panel |
+
+The hosted-model provider is isolated behind one interface so that provider
+changes do not alter retrieval, validation or evaluation logic.
+
+---
+
+## 5. Corpus and ingestion
+
+### 5.1 Source
+
+The current corpus is built from the public momentum-and-collisions chapter:
+
+- File: `FK_K5_E_A.pdf`
+- Source:
+  [Study4Exams PDF](https://www.study4exams.gr/physics_k/pdf/FK_K5_E/FK_K5_E_A.pdf)
+- Result: 62 records, each containing one exercise and its worked solution.
+
+The OCR output is page-separated Markdown. Mathematical notation uses
+`$...$` for inline expressions and `$$...$$` for display expressions.
+
+### 5.2 Rebuilding the OCR output
+
+OCR dependencies are separate from application dependencies:
+
+```bash
+python -m pip install -r requirements-ingest.txt
+curl -L \
+  https://www.study4exams.gr/physics_k/pdf/FK_K5_E/FK_K5_E_A.pdf \
+  -o FK_K5_E_A.pdf
+python ocr_pipeline.py FK_K5_E_A.pdf
 ```
 
-Each stage is one module. A stage is complete only after its output has been
-inspected on real collisions data.
+The pipeline must:
+
+- support resuming after interruption;
+- write completed pages atomically;
+- retain page boundaries;
+- preserve inline and display mathematics where recoverable; and
+- make boilerplate removal inspectable.
+
+Ingestion is an offline preparation step. The served application and its
+container do not import or install the OCR stack.
+
+### 5.3 Chunk contract
+
+Each corpus record contains a stable `chunk_id` and its source text. Chunking
+uses the exercise-and-solution unit rather than a fixed token window. A
+`$$...$$` block must remain intact.
+
+The `chunk_id` and text stored in Qdrant are fixed together at index time.
+Any corpus or chunking change therefore requires regeneration of embeddings
+and a collection rebuild.
 
 ---
 
-## Fixed decisions
+## 6. Retrieval and generation
 
-- **Corpus:** the collisions chapter (ΚΕΦΑΛΑΙΟ 5: ΚΡΟΥΣΕΙΣ) — 62 exercises with
-  worked solutions, chunked one exercise + solution per record. Public material
-  only.
-- **Source format:** page-separated markdown from a Surya OCR stack, LaTeX
-  delimiters (`$...$` inline, `$$...$$` display).
-- **Retrieval query = problem statement only** (resolved 2026-07-11;
-  rationale revised 2026-07-23 — see Amendments). The student's attempt is
-  included verbatim in the generation prompt but not in the deployed
-  retrieval query. On the development set, a combined problem-and-attempt
-  query improved Recall@5 from 8/10 to 10/10. Because the evaluated attempts
-  are uniformly articulate, AI-generated prose, the result may not extend to
-  sparse algebra, ambiguous wording or incorrect terminology in real student
-  work. The problem-only query is retained pending evaluation on a held-out
-  set with varied response forms. Attempt-only retrieval remains out of scope;
-  separate problem and attempt searches with rank fusion remain a Parking Lot
-  candidate.
-- **Taxonomy:** a closed JSON label list for momentum-and-collision
-  misconceptions — 15 tags in 4 categories plus a `NO_TAG_MATCH` outcome
-  (resolved 2026-07-12; scope wording widened 2026-07-23 to reflect the
-  inclusion of explosions and momentum-conservation problems). The taxonomy
-  was drafted with AI assistance from the corpus and subsequently reviewed by
-  the author. The generation model proposes labels from the fixed set, a tutor
-  makes the final determination, and the parser rejects labels outside the
-  list. Per-entry `source: observed|constructed` metadata remains deferred to
-  the full taxonomy review in the Parking Lot.
-- **Embeddings:** BGE-M3, loaded through FlagEmbedding for multilingual dense
-  embeddings. The model's sparse lexical weights remain available for future
-  hybrid-retrieval evaluation; using them would require a collection rebuild
-  and a defined rank-fusion strategy.
-- **Vector store:** Qdrant in embedded mode (`./qdrant_data`), matching the
-  single-process deployment. Each payload stores the immutable `chunk_id` and
-  source text associated with the vector at index time.
-- **Generation:** a hosted frontier LLM accessed through a provider interface
-  isolated to one function; the implementation has been used with both
-  Anthropic and Gemini. Preliminary project testing found smaller models less
-  reliable when comparing Greek-language student attempts with retrieved
-  solutions and assigning taxonomy labels.
-- **Pipeline shape:** a single retrieve -> generate -> tag pass. Non-agentic.
-- **Retrieval ablation:** the interface includes a retrieval on/off toggle.
-  On the development set (2026-07-23), tag accuracy was 10/10 with retrieval
-  and 9/10 without it. Retrieval did not change the correct diagnosis in nine
-  cases, although it provided material for inspection; in one case it changed
-  an incorrect diagnosis to the correct one. These are development-set
-  observations rather than general performance estimates.
-- **Evaluation protocol** (added 2026-07-23): a development / test split.
-  The 10-case development set (`eval/cases.jsonl`) has known construction
-  biases — shared authorship between taxonomy and cases, pooled gold-chunk
-  labelling — and is used for harness verification and design experiments.
-  Claims about system quality are reserved for a held-out test set,
-  independently authored from observed student errors, with attempts
-  varying in articulateness by design, against which prompts and taxonomy
-  are never tuned.
+### 6.1 Retrieval
 
----
+- **Encoder:** BGE-M3 through FlagEmbedding.
+- **Representation:** dense multilingual embeddings.
+- **Store:** Qdrant embedded mode at `./qdrant_data`.
+- **Deployed query:** problem statement only.
+- **Result:** top-k records containing `chunk_id`, text and similarity score.
 
-## Definition of done
+BGE-M3 sparse lexical weights are not used by the current collection. Adding
+hybrid retrieval would require a new collection schema and an explicit
+dense/sparse fusion rule.
 
-1. **Demonstrable.** The demo runs end to end on the laptop, from a cold
-   start, presentable at the Greeks in AI symposium (July 15–17). Cached
-   outputs for the demo cases exist as the network-failure fallback.
-   *(Amended 2026-07-12 — was: deployed to a public URL. See Amendments.)*
-2. **Diagnostic loop.** Input consists of a problem and a student's incorrect
-   attempt. Output consists of a diagnosis associated with cited retrieved
-   chunks and one or more candidate labels from the fixed taxonomy.
-3. **Sources shown.** The retrieved chunks the diagnosis rests on are displayed
-   alongside it.
-4. **Ablation visible.** A toggle runs the same case with retrieval enabled
-   or disabled so the two outputs can be compared directly.
-5. **Greek end to end.** Input to output, in Greek.
-6. **Verified.** Demo cases spanning at least three taxonomy categories, each
-   run in both retrieval modes, with any specific citation claims audited by
-   hand against the corpus. *(Amended 2026-07-12 — the fixed eval set with
-   reported hit-rate and tag-accuracy numbers moves to the first post-symposium
-   milestone. See Amendments.)*
-7. **Documented.** Code, specification, taxonomy and README include local run
-   instructions, taxonomy provenance and disclosure of AI-assisted development.
+### 6.2 Query decision
+
+Problem-only retrieval was originally selected on the hypothesis that errors
+in a student attempt could distort the retrieval representation. The
+development comparison did not support that hypothesis: combining the problem
+and attempt increased Recall@5 from 0.80 to 1.00, including on a case whose
+attempt contained incorrect momentum algebra.
+
+Problem-only retrieval remains the deployed baseline for a different reason:
+the problem statement is a stable input, while the observed advantage of the
+combined query has not yet been tested across varied forms of student work.
+The development attempts are relatively articulate and do not represent bare
+algebra, ambiguous wording or incorrect terminology adequately. The
+implementation therefore remains unchanged, but its rationale has been
+revised. Query selection will be revisited after the held-out evaluation.
+
+### 6.3 Prompt construction
+
+The prompt contains:
+
+1. retrieved corpus passages;
+2. the closed taxonomy;
+3. the problem statement;
+4. the student attempt; and
+5. output and task instructions.
+
+Corpus passages and user-provided text are delimited as data. Instructions are
+placed after the source material. The student attempt is included verbatim for
+diagnosis even though it is excluded from the deployed retrieval query.
+
+### 6.4 Generation
+
+Generation uses a hosted frontier model through a provider-specific function.
+The system has been exercised with Anthropic and Gemini providers; the public
+demonstrator uses the configured provider available at deployment.
+
+The model must:
+
+- compare the attempt with the problem and retrieved material;
+- identify the point at which the reasoning diverges;
+- cite only retrieved chunk IDs; and
+- select candidate labels only from the supplied taxonomy.
 
 ---
 
-## Out of scope
+## 7. Misconception taxonomy
 
-- Chapters other than collisions.
-- Taxonomy expansion beyond the entries needed for the loop (see Parking Lot).
-- Tutor workbench, the broader platform, multi-loop orchestration.
-- Local LLM inference / GPU serving.
-- User accounts, persistence, multi-user state.
-- Reranking, query rewriting, agentic retrieval, fine-tuning.
-- Polished or themed UI. The required interface is limited to the
-  problem-and-attempt input, diagnosis, candidate labels, retrieved sources
-  and retrieval-ablation toggle.
+The taxonomy is a closed JSON resource covering momentum-and-collision
+misconceptions, including collision, explosion and momentum-conservation
+contexts.
 
----
+- 15 diagnostic labels are organised into four categories.
+- `NO_TAG_MATCH` is available when none of the defined labels is appropriate.
+- The model may propose one to three labels.
+- Labels outside the resource are rejected by the parser.
+- A tutor confirms or rejects the proposed labels.
 
-## Components
-
-- **Cleaning:** OCR markdown -> boilerplate-stripped markdown, removal audited.
-- **Chunking:** markdown -> 62 JSONL records, one exercise + solution each;
-  never splitting inside a `$$...$$` block.
-- **Embedding:** BGE-M3 dense vectors over chunks, persisted with an explicit
-  ID sidecar (pairing recorded at write time).
-- **Store:** embedded Qdrant collection; payload = {chunk_id, text}.
-- **Retrieval:** problem statement -> top-k chunks {chunk_id, text, score}.
-- **Generation:** (problem, attempt, chunks, taxonomy) -> grounded diagnosis +
-  1–3 candidate tags via hosted frontier LLM; JSON output validated against
-  the closed list in code.
-- **Taxonomy:** closed, tutor-reviewed JSON list supplied to the generation
-  model; output labels are validated against this list.
-- **Ablation:** retrieval on/off path behind a UI toggle (one flag, not a
-  second code path).
-- **UI:** minimal Gradio interface over the diagnostic path, plus a collapsed
-  audit panel showing retrieved chunks verbatim.
-- **Evaluation harness** (added 2026-07-23): `eval/cases.jsonl` (cases with
-  hand-assigned gold tags and hand-labelled gold chunks, with provenance
-  fields), `eval/run_cases.py` (resumable prediction runner, both retrieval
-  conditions), offline scorers for tag accuracy, Recall@k/MRR, query
-  construction, and citation validity; `eval/label_tool.py` (internal
-  gold-chunk labelling scaffold, blind to rank and chunk ID).
+The taxonomy was drafted with LLM assistance from the source corpus and
+reviewed against teaching experience. Its current status is suitable for the
+demonstrator; a per-label audit against independently observed student errors
+remains planned.
 
 ---
 
-## Amendments
+## 8. Evaluation
 
-- **2026-07-11 — query construction resolved.** Problem-only retrieval,
-  adopted from the open decision in the original architecture. Rationale
-  recorded under Fixed decisions; rejected alternatives parked.
-- **2026-07-12 — taxonomy format and provenance.** YAML -> JSON; "hand-built
-  with per-entry source field" -> "AI-drafted, tutor-audited closed list with
-  NO_TAG_MATCH"; the source-provenance field deferred to the full audit pass.
-- **2026-07-12 — DoD items 1 and 6 re-scoped for the symposium deadline.**
-  Public deployment and a fixed evaluation set with reported results were
-  moved to the first post-symposium milestone. For the July 14 deadline, the
-  completion criteria were limited to a laptop demonstration and manually
-  reviewed cases spanning three taxonomy categories.
-- **2026-07-21 — Hugging Face Spaces deployment completed.** Public
-  deployment was completed and removed from Out of scope. The deployment is
-  maintained as a public demonstrator rather than an operational service.
-- **2026-07-23 — taxonomy scope wording widened.** "Collision misconceptions"
-  -> "momentum-and-collision misconceptions", matching the corpus, which
-  includes explosions and momentum-conservation questions (its first chunk
-  is an explosion problem). Category descriptions to be aligned in the full
-  audit pass; no tags added or removed by this amendment.
-- **2026-07-23 — development evaluation set added; development/test split
-  adopted.** The development set contains 10 cases with manually assigned
-  labels and source-chunk relevance judgements. Reported measures include tag
-  accuracy under both retrieval conditions, Recall@k, MRR, query construction
-  and citation validity. Because the cases and taxonomy have related
-  authorship and the relevance pool originated from retriever output, primary
-  performance estimates are deferred to an independently constructed
-  held-out set.
-- **2026-07-23 — query-construction rationale revised; deployed decision
-  retained.** The combined problem-and-attempt query achieved Recall@5 of
-  10/10, compared with 8/10 for problem-only retrieval. The current
-  development set does not test whether this improvement persists across
-  sparse algebra, ambiguous wording or incorrect terminology. Problem-only
-  retrieval therefore remains deployed until the held-out evaluation is
-  available. Separate problem and attempt searches with rank fusion moved
-  from rejected to Parking Lot candidate.
+### 8.1 Purpose
+
+The evaluation layer serves two distinct purposes:
+
+- verify that the pipeline, metrics and ablation behave reproducibly; and
+- compare design choices before a held-out evaluation is introduced.
+
+Development results are not treated as general performance estimates.
+
+### 8.2 Development set
+
+`eval/cases.jsonl` contains 10 cases with:
+
+- a problem and student attempt;
+- a manually assigned misconception label;
+- manually assigned source-chunk relevance judgements; and
+- provenance fields used by the evaluation scripts.
+
+The set has related authorship with the taxonomy, and relevance labels were
+formed from a pooled candidate set. It is therefore used for development and
+harness verification.
+
+### 8.3 Measures
+
+| Layer | Measure | Interpretation |
+|---|---|---|
+| Retrieval | Recall@k | Whether a relevant chunk appears in the first `k` results |
+| Retrieval | MRR | How early the first relevant chunk appears |
+| Diagnosis | Tag accuracy | Whether the candidate output contains the assigned gold label |
+| Grounding contract | Citation validity | Whether every cited ID was returned by retrieval |
+| Ablation | Retrieval on/off comparison | Whether retrieved context changes the proposed diagnosis |
+
+### 8.4 Current development observations
+
+| Condition | Result |
+|---|---:|
+| Problem-only retrieval, Recall@5 | 0.80 |
+| Problem-only retrieval, MRR | 0.70 |
+| Combined problem-and-attempt query, Recall@5 | 1.00 |
+| Tag accuracy with retrieval | 10/10 |
+| Tag accuracy without retrieval | 9/10 |
+
+In nine cases, retrieval did not change whether the assigned label was
+recovered, although it supplied inspectable source material. In one case,
+retrieved context changed an incorrect diagnosis to the assigned diagnosis.
+These observations describe the development set only.
+
+### 8.5 Held-out evaluation
+
+Primary system-quality claims require an independently constructed held-out
+set. Before that evaluation:
+
+- cases must be derived from observed student errors;
+- response form must vary deliberately;
+- source relevance must be assigned through a corpus-level review rather than
+  only from retrieved candidates; and
+- prompts, query construction and taxonomy content must be frozen.
+
+The held-out set will be used to compare problem-only, combined-query and
+separate-query fusion strategies.
 
 ---
 
-## Parking Lot
+## 9. Verification and release criteria
 
-Ideas for later (not current commitments):
+| Requirement | Current state | Verification |
+|---|---|---|
+| Greek problem-and-attempt input | Implemented | End-to-end demonstration |
+| Greek diagnosis and candidate labels | Implemented | Reviewed example cases |
+| Retrieved passages displayed | Implemented | Interface audit panel |
+| Retrieval on/off ablation | Implemented | Same diagnostic path controlled by one flag |
+| Closed-label enforcement | Implemented | Parser tests |
+| Citation-ID subset enforcement | Implemented | `validate_citations()` tests |
+| Reproducible offline scoring | Implemented | Evaluation runner and scorers |
+| Deterministic test layer | Implemented | 19 tests in `tests/test_core.py` |
+| Continuous integration | Implemented | `.github/workflows/tests.yml` |
+| CPU container | Implemented | Verified application startup from `Dockerfile` |
+| Public demonstrator | Implemented | Hugging Face Spaces deployment |
+| Held-out performance evaluation | Planned | Protocol in Section 8.5 |
 
-- **Held-out test set:** independently constructed cases derived from observed
-  student errors, with two cases per applicable label and deliberate variation
-  in response form, including bare algebra and incorrect terminology. Relevant
-  chunks will be assigned through an exhaustive corpus audit rather than
-  retrieval-result pooling. This set will be used to compare query strategies
-  and estimate primary system performance.
-- Deterministic test layer: pytest over the parser, taxonomy integrity, and
-  eval-file invariants; citation-validity promoted from observed to enforced
-  (assert cited IDs ⊆ retrieved set). Minimal GitHub Actions running it.
-- Citation-support review: classify cited chunks as directly supporting,
-  defensible alternatives or non-supporting across the evaluation set.
-- Complete per-label taxonomy review informed by previously graded student
-  solutions; add `source: observed|constructed` provenance metadata, align
-  category descriptions with the widened scope, and define an explicit
-  outcome for fully correct work.
-- Evaluate hybrid dense and sparse retrieval using BGE-M3 lexical weights.
-  This requires a collection rebuild and a defined fusion method. Motivation
-  comes from the limited ranking change in the one-word substitution test and
-  the configuration-level misses observed on the development set.
-- Citation selection: evaluate whether prompt changes can improve support
-  precision without reducing coverage of relevant material. Development-set
-  output averaged 1.7 citations per case.
-- Reranking and query rewriting; attempt-only retrieval; and separate problem
-  and attempt searches with rank fusion. The last option retains the attempt's
-  disambiguating terms while keeping the textbook problem as an independent
-  retrieval signal. Selection between these approaches is deferred until the
-  held-out test set is available.
-- Chapters beyond collisions.
-- Tutor confirmation workflow / persistence.
-- Model the student as a state object (misconception-state over time),
-  complex-systems lens: stable vs. transient misconceptions, transitions under
-  intervention.
-- Methodology layer: hand-authored methodology per exercise case, with
-  methodology tags alongside misconception tags, enabling tutor-on-demand
-  exercise retrieval by tag.
+The deterministic tests make no API calls and do not load the embedding model
+or vector store. They cover response parsing, taxonomy integrity, citation
+validation and evaluation-file invariants.
+
+---
+
+## 10. Operational constraints
+
+### 10.1 Dependency boundaries
+
+- `requirements.txt`: application runtime and deployment.
+- `requirements-dev.txt`: deterministic tests and development tooling.
+- `requirements-ingest.txt`: OCR and corpus reconstruction.
+
+The container installs runtime dependencies only. `gradio` is pinned
+explicitly because a standalone container does not inherit the SDK version
+provided by Hugging Face Spaces.
+
+### 10.2 Deployment
+
+The demonstrator is designed for CPU execution and a single-process embedded
+Qdrant store. The container runs as a non-root user and layers dependencies
+before source code to preserve build caching.
+
+The hosted generation provider requires an API key and is subject to provider
+availability, latency and quota limits. Public deployment is a demonstrator,
+not an operational service.
+
+### 10.3 Data handling
+
+The application should be tested with synthetic or anonymised student work.
+The current interface does not provide an account system, access controls or a
+retention policy suitable for identifiable educational records.
+
+---
+
+## 11. Planned work
+
+### Evaluation priorities
+
+1. Construct the held-out set defined in Section 8.5.
+2. Review whether each citation directly supports its associated claim.
+3. Compare problem-only retrieval, combined retrieval and separate
+   problem/attempt searches with rank fusion.
+4. Evaluate dense-and-sparse hybrid retrieval with a defined fusion method.
+
+### Taxonomy priorities
+
+1. Audit every label against previously graded student work.
+2. Record whether each entry is observed or constructed.
+3. Align category descriptions with the full momentum-and-collisions scope.
+4. Define an explicit outcome for fully correct work.
+
+### Possible extensions
+
+- citation-selection experiments;
+- reranking and query rewriting;
+- additional physics chapters;
+- tutor confirmation and persistence;
+- longitudinal misconception state; and
+- a methodology taxonomy for exercise selection.
+
+These items are not commitments of the current implementation.
+
+---
+
+## 12. Decision record
+
+| Date | Decision | Basis |
+|---|---|---|
+| 2026-07-11 | Use the problem statement as the deployed retrieval query | Initial hypothesis that erroneous attempts could distort the retrieval representation |
+| 2026-07-12 | Use a closed JSON taxonomy with `NO_TAG_MATCH` | Deterministic label validation and an explicit unmatched case |
+| 2026-07-21 | Maintain a public Hugging Face Spaces demonstrator | Reproducible access without treating the project as a production service |
+| 2026-07-23 | Separate development and held-out evaluation roles | Avoid presenting design-set results as performance estimates |
+| 2026-07-23 | Retain problem-only retrieval but revise its rationale | The combined query outperformed the deployed query, but its advantage has not been tested across varied response forms |
+| 2026-07-24 | Enforce citation IDs as a subset of retrieved IDs | Make source traceability a deterministic invariant |
+| 2026-07-24 | Separate runtime, development and ingestion dependencies | Keep deployment independent of the OCR toolchain |
+| 2026-07-24 | Add deterministic tests, CI and a CPU container | Verify core contracts without network or model dependencies |
+
+### 12.1 Revisions to earlier positions
+
+Some entries above replaced earlier positions rather than resolving open
+questions. They are retained here because the change itself is relevant to
+the development record.
+
+| Date | Topic | Earlier position | Revision |
+|---|---|---|---|
+| 2026-07-12 | Completion criteria | Public deployment and a fixed evaluation set were immediate completion requirements | Both were deferred under deadline pressure and subsequently completed |
+| 2026-07-23 | Taxonomy scope | The taxonomy was described as collision-specific | The stated scope was widened to momentum and collisions, matching a corpus that also contains explosion and momentum-conservation problems |
+| 2026-07-23 | Retrieval query | Problem-only retrieval was justified by the hypothesis that erroneous attempts could distort retrieval | The development comparison did not support that hypothesis; the implementation was retained on the revised stability rationale pending held-out evaluation |
+
+In the retrieval case, the decision stood; its justification did not.
+
+---
+
+## 13. Authorship
+
+I designed the architecture and developed the system with assistance from LLM
+tools, including Claude, ChatGPT and Gemini. I reviewed and tested the
+implementation, evaluated the main design choices, audited the misconception
+taxonomy, and manually assigned the evaluation labels for misconceptions and
+source-chunk relevance.
