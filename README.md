@@ -225,9 +225,12 @@ python load_qdrant.py
 
 ### Rebuilding the corpus from source
 
-\> [!NOTE]**This step is not required to run the system.** The repository ships the derived corpus > (62 chunks and the embedded Qdrant collection), so the application, the > evaluation and the tests all work without this step. Follow it only to > reproduce ingestion end to end: it pulls several GB of OCR dependencies, > needs a system poppler install, and is slow without a GPU.
-
-The repository ships the derived corpus, so this is **only** needed to reproduce the ingestion pipeline end to end.
+> [!NOTE]
+> **This step is not required to run the system.** The repository ships the
+> derived corpus (62 chunks and the embedded Qdrant collection), so the
+> application, the evaluation and the tests all work without this step. Follow
+> it **only** to reproduce ingestion end to end: it pulls several GB of OCR
+> dependencies, needs a system poppler install, and is slow without a GPU.
 
 **System prerequisite:** `pdf2image` shells out to poppler.
 
